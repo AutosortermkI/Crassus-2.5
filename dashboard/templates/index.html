@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crassus 2.5 Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a2e;
+            color: #e0e0e0;
+            line-height: 1.6;
+        }
+
+        /* Header */
+        .header {
+            background: #16213e;
+            padding: 16px 32px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid #0f3460;
+        }
+        .header h1 {
+            font-size: 22px;
+            color: #fff;
+        }
+        .badge {
+            padding: 6px 16px;
+            border-radius: 4px;
+            font-weight: 700;
+            font-size: 13px;
+            letter-spacing: 1px;
+        }
+        .badge-paper {
+            background: #00b894;
+            color: #1a1a2e;
+        }
+        .badge-live {
+            background: #e17055;
+            color: #fff;
+        }
+
+        /* Layout */
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        /* Cards */
+        .card {
+            background: #16213e;
+            border-radius: 8px;
+            padding: 24px;
+            margin-bottom: 24px;
+            border: 1px solid #0f3460;
+        }
+        .card h2 {
+            font-size: 16px;
+            color: #a0a0c0;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        /* Portfolio overview grid */
+        .portfolio-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 16px;
+        }
+        .stat-box {
+            background: #1a1a2e;
+            border-radius: 6px;
+            padding: 16px;
+            text-align: center;
+        }
+        .stat-box .label {
+            font-size: 12px;
+            color: #8888aa;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .stat-box .value {
+            font-size: 24px;
+            font-weight: 700;
+            color: #fff;
+            margin-top: 4px;
+        }
+
+        /* Tables */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th {
+            text-align: left;
+            padding: 10px 12px;
+            font-size: 12px;
+            color: #8888aa;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid #0f3460;
+        }
+        td {
+            padding: 10px 12px;
+            font-size: 14px;
+            border-bottom: 1px solid rgba(15, 52, 96, 0.5);
+        }
+        tr:hover td { background: rgba(15, 52, 96, 0.3); }
+
+        /* P&L coloring */
+        .positive { color: #00b894; }
+        .negative { color: #e17055; }
+
+        /* Status badges */
+        .status { padding: 3px 8px; border-radius: 3px; font-size: 12px; font-weight: 600; }
+        .status-filled { background: rgba(0, 184, 148, 0.2); color: #00b894; }
+        .status-new, .status-accepted, .status-pending_new, .status-partially_filled {
+            background: rgba(253, 203, 110, 0.2); color: #fdcb6e;
+        }
+        .status-canceled, .status-expired, .status-replaced {
+            background: rgba(160, 160, 192, 0.2); color: #a0a0c0;
+        }
+        .status-rejected { background: rgba(225, 112, 85, 0.2); color: #e17055; }
+
+        /* Config editor */
+        .config-group {
+            margin-bottom: 24px;
+        }
+        .config-group h3 {
+            font-size: 14px;
+            color: #00b894;
+            margin-bottom: 12px;
+            padding-bottom: 6px;
+            border-bottom: 1px solid #0f3460;
+        }
+        .config-row {
+            display: grid;
+            grid-template-columns: 1fr 120px;
+            gap: 12px;
+            align-items: center;
+            padding: 8px 0;
+        }
+        .config-label {
+            font-size: 14px;
+        }
+        .config-label .desc {
+            font-size: 11px;
+            color: #8888aa;
+        }
+        .config-input {
+            background: #1a1a2e;
+            border: 1px solid #0f3460;
+            color: #e0e0e0;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 14px;
+            width: 100%;
+            text-align: right;
+        }
+        .config-input:focus {
+            outline: none;
+            border-color: #00b894;
+        }
+
+        /* Toggle switch */
+        .toggle-wrap { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+        .toggle {
+            position: relative;
+            width: 44px;
+            height: 24px;
+            background: #0f3460;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .toggle.active { background: #00b894; }
+        .toggle::after {
+            content: '';
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            width: 18px;
+            height: 18px;
+            background: #fff;
+            border-radius: 50%;
+            transition: transform 0.2s;
+        }
+        .toggle.active::after { transform: translateX(20px); }
+
+        /* Buttons */
+        .btn {
+            padding: 8px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            transition: opacity 0.2s;
+        }
+        .btn:hover { opacity: 0.85; }
+        .btn-primary { background: #00b894; color: #1a1a2e; }
+        .btn-secondary { background: #0f3460; color: #e0e0e0; }
+        .btn-sm { padding: 5px 12px; font-size: 12px; }
+
+        /* Toast notification */
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            padding: 14px 24px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            z-index: 1000;
+            transform: translateY(100px);
+            opacity: 0;
+            transition: all 0.3s;
+        }
+        .toast.show { transform: translateY(0); opacity: 1; }
+        .toast-success { background: #00b894; color: #1a1a2e; }
+        .toast-error { background: #e17055; color: #fff; }
+
+        /* Empty state */
+        .empty-state {
+            text-align: center;
+            padding: 32px;
+            color: #8888aa;
+            font-size: 14px;
+        }
+
+        /* Loading spinner */
+        .loading { text-align: center; padding: 24px; color: #8888aa; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1>Crassus 2.5</h1>
+    <span id="tradingBadge" class="badge badge-paper">PAPER TRADING</span>
+</div>
+
+<div class="container">
+
+    <!-- Section 1: Portfolio Overview -->
+    <div class="card">
+        <h2>
+            Portfolio Overview
+            <button class="btn btn-secondary btn-sm" onclick="loadPortfolio()">Refresh</button>
+        </h2>
+        <div id="portfolioGrid" class="portfolio-grid">
+            <div class="loading">Loading...</div>
+        </div>
+    </div>
+
+    <!-- Section 2: Open Positions -->
+    <div class="card">
+        <h2>
+            Open Positions
+            <button class="btn btn-secondary btn-sm" onclick="loadPositions()">Refresh</button>
+        </h2>
+        <div id="positionsTable">
+            <div class="loading">Loading...</div>
+        </div>
+    </div>
+
+    <!-- Section 3: Recent Orders -->
+    <div class="card">
+        <h2>
+            Recent Orders
+            <button class="btn btn-secondary btn-sm" onclick="loadOrders()">Refresh</button>
+        </h2>
+        <div id="ordersTable">
+            <div class="loading">Loading...</div>
+        </div>
+    </div>
+
+    <!-- Section 4: Trading Parameters -->
+    <div class="card">
+        <h2>Trading Parameters</h2>
+        <div id="configEditor">
+            <div class="loading">Loading...</div>
+        </div>
+        <div style="text-align: right; margin-top: 16px;">
+            <button class="btn btn-primary" onclick="saveConfig()">Save All</button>
+        </div>
+    </div>
+
+</div>
+
+<!-- Toast -->
+<div id="toast" class="toast"></div>
+
+<script>
+    // ======================================================================
+    // Helpers
+    // ======================================================================
+
+    function fmt(n) {
+        if (n === null || n === undefined) return '-';
+        return Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function fmtDollar(n) {
+        if (n === null || n === undefined) return '-';
+        return '$' + fmt(n);
+    }
+
+    function fmtPct(n) {
+        if (n === null || n === undefined) return '-';
+        return fmt(n) + '%';
+    }
+
+    function plClass(n) {
+        if (n > 0) return 'positive';
+        if (n < 0) return 'negative';
+        return '';
+    }
+
+    function statusClass(s) {
+        const lower = (s || '').toLowerCase();
+        if (lower === 'filled') return 'status-filled';
+        if (['new', 'accepted', 'pending_new', 'partially_filled'].includes(lower)) return 'status-new';
+        if (['canceled', 'expired', 'replaced'].includes(lower)) return 'status-canceled';
+        if (lower === 'rejected') return 'status-rejected';
+        return '';
+    }
+
+    function showToast(message, type) {
+        const toast = document.getElementById('toast');
+        toast.textContent = message;
+        toast.className = 'toast ' + (type === 'error' ? 'toast-error' : 'toast-success');
+        toast.classList.add('show');
+        setTimeout(() => toast.classList.remove('show'), 3000);
+    }
+
+    // ======================================================================
+    // Portfolio
+    // ======================================================================
+
+    function loadPortfolio() {
+        fetch('/api/portfolio')
+            .then(r => r.json())
+            .then(data => {
+                if (data.status !== 'ok') {
+                    document.getElementById('portfolioGrid').innerHTML =
+                        '<div class="empty-state">Error: ' + (data.message || 'Unknown') + '</div>';
+                    return;
+                }
+                const p = data.portfolio;
+
+                // Update paper/live badge
+                const badge = document.getElementById('tradingBadge');
+                if (p.paper) {
+                    badge.textContent = 'PAPER TRADING';
+                    badge.className = 'badge badge-paper';
+                } else {
+                    badge.textContent = 'LIVE TRADING';
+                    badge.className = 'badge badge-live';
+                }
+
+                document.getElementById('portfolioGrid').innerHTML = `
+                    <div class="stat-box">
+                        <div class="label">Equity</div>
+                        <div class="value">${fmtDollar(p.equity)}</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="label">Buying Power</div>
+                        <div class="value">${fmtDollar(p.buying_power)}</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="label">Cash</div>
+                        <div class="value">${fmtDollar(p.cash)}</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="label">Portfolio Value</div>
+                        <div class="value">${fmtDollar(p.portfolio_value)}</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="label">Daily P&amp;L</div>
+                        <div class="value ${plClass(p.profit_loss)}">${fmtDollar(p.profit_loss)}</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="label">Daily P&amp;L %</div>
+                        <div class="value ${plClass(p.profit_loss_pct)}">${fmtPct(p.profit_loss_pct)}</div>
+                    </div>
+                `;
+            })
+            .catch(err => {
+                document.getElementById('portfolioGrid').innerHTML =
+                    '<div class="empty-state">Failed to load portfolio data</div>';
+            });
+    }
+
+    // ======================================================================
+    // Positions
+    // ======================================================================
+
+    function loadPositions() {
+        fetch('/api/positions')
+            .then(r => r.json())
+            .then(data => {
+                if (data.status !== 'ok') {
+                    document.getElementById('positionsTable').innerHTML =
+                        '<div class="empty-state">Error: ' + (data.message || 'Unknown') + '</div>';
+                    return;
+                }
+                const positions = data.positions;
+                if (!positions.length) {
+                    document.getElementById('positionsTable').innerHTML =
+                        '<div class="empty-state">No open positions</div>';
+                    return;
+                }
+
+                let html = `<table>
+                    <thead><tr>
+                        <th>Symbol</th><th>Qty</th><th>Avg Entry</th>
+                        <th>Current</th><th>Market Value</th>
+                        <th>Unrealized P&amp;L</th><th>P&amp;L %</th>
+                    </tr></thead><tbody>`;
+
+                for (const p of positions) {
+                    html += `<tr>
+                        <td><strong>${p.symbol}</strong></td>
+                        <td>${p.qty}</td>
+                        <td>${fmtDollar(p.avg_entry)}</td>
+                        <td>${fmtDollar(p.current_price)}</td>
+                        <td>${fmtDollar(p.market_value)}</td>
+                        <td class="${plClass(p.unrealized_pl)}">${fmtDollar(p.unrealized_pl)}</td>
+                        <td class="${plClass(p.unrealized_pl_pct)}">${fmtPct(p.unrealized_pl_pct)}</td>
+                    </tr>`;
+                }
+                html += '</tbody></table>';
+                document.getElementById('positionsTable').innerHTML = html;
+            })
+            .catch(err => {
+                document.getElementById('positionsTable').innerHTML =
+                    '<div class="empty-state">Failed to load positions</div>';
+            });
+    }
+
+    // ======================================================================
+    // Orders
+    // ======================================================================
+
+    function loadOrders() {
+        fetch('/api/orders')
+            .then(r => r.json())
+            .then(data => {
+                if (data.status !== 'ok') {
+                    document.getElementById('ordersTable').innerHTML =
+                        '<div class="empty-state">Error: ' + (data.message || 'Unknown') + '</div>';
+                    return;
+                }
+                const orders = data.orders;
+                if (!orders.length) {
+                    document.getElementById('ordersTable').innerHTML =
+                        '<div class="empty-state">No recent orders</div>';
+                    return;
+                }
+
+                let html = `<table>
+                    <thead><tr>
+                        <th>Symbol</th><th>Side</th><th>Type</th>
+                        <th>Qty</th><th>Status</th><th>Fill Price</th><th>Time</th>
+                    </tr></thead><tbody>`;
+
+                for (const o of orders) {
+                    const sideClass = o.side === 'buy' ? 'positive' : (o.side === 'sell' ? 'negative' : '');
+                    html += `<tr>
+                        <td><strong>${o.symbol}</strong></td>
+                        <td class="${sideClass}">${o.side.toUpperCase()}</td>
+                        <td>${o.type}</td>
+                        <td>${o.qty}</td>
+                        <td><span class="status ${statusClass(o.status)}">${o.status}</span></td>
+                        <td>${o.filled_price !== null ? fmtDollar(o.filled_price) : '-'}</td>
+                        <td>${o.submitted_at || '-'}</td>
+                    </tr>`;
+                }
+                html += '</tbody></table>';
+                document.getElementById('ordersTable').innerHTML = html;
+            })
+            .catch(err => {
+                document.getElementById('ordersTable').innerHTML =
+                    '<div class="empty-state">Failed to load orders</div>';
+            });
+    }
+
+    // ======================================================================
+    // Config editor
+    // ======================================================================
+
+    let configData = {};
+
+    function loadConfig() {
+        fetch('/api/config')
+            .then(r => r.json())
+            .then(data => {
+                if (data.status !== 'ok') {
+                    document.getElementById('configEditor').innerHTML =
+                        '<div class="empty-state">Error loading config</div>';
+                    return;
+                }
+                configData = data.config;
+                renderConfig(configData);
+            })
+            .catch(err => {
+                document.getElementById('configEditor').innerHTML =
+                    '<div class="empty-state">Failed to load configuration</div>';
+            });
+    }
+
+    function renderConfig(config) {
+        // Group parameters
+        const groups = {};
+        for (const [key, meta] of Object.entries(config)) {
+            const group = meta.group;
+            if (!groups[group]) groups[group] = [];
+            groups[group].push({ key, ...meta });
+        }
+
+        let html = '';
+        for (const [groupName, params] of Object.entries(groups)) {
+            html += `<div class="config-group">
+                <h3>${groupName}</h3>`;
+
+            for (const p of params) {
+                if (p.type === 'bool') {
+                    const isActive = (p.value || '').toLowerCase() === 'true';
+                    html += `<div class="config-row">
+                        <div class="config-label">
+                            ${p.label}
+                            <div class="desc">${p.description}</div>
+                        </div>
+                        <div class="toggle-wrap">
+                            <span style="font-size:12px;color:#8888aa">${isActive ? 'ON' : 'OFF'}</span>
+                            <div class="toggle ${isActive ? 'active' : ''}"
+                                 data-key="${p.key}"
+                                 onclick="toggleBool(this)"></div>
+                        </div>
+                    </div>`;
+                } else {
+                    html += `<div class="config-row">
+                        <div class="config-label">
+                            ${p.label}
+                            <div class="desc">${p.description}</div>
+                        </div>
+                        <input class="config-input" type="text"
+                               data-key="${p.key}"
+                               value="${p.value}"
+                               placeholder="${p.default}">
+                    </div>`;
+                }
+            }
+            html += '</div>';
+        }
+
+        document.getElementById('configEditor').innerHTML = html;
+    }
+
+    function toggleBool(el) {
+        const isActive = el.classList.toggle('active');
+        const label = el.previousElementSibling;
+        label.textContent = isActive ? 'ON' : 'OFF';
+    }
+
+    function saveConfig() {
+        const updates = {};
+
+        // Gather text inputs
+        document.querySelectorAll('.config-input').forEach(input => {
+            updates[input.dataset.key] = input.value;
+        });
+
+        // Gather toggles
+        document.querySelectorAll('.toggle[data-key]').forEach(toggle => {
+            updates[toggle.dataset.key] = toggle.classList.contains('active') ? 'true' : 'false';
+        });
+
+        fetch('/api/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updates),
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status === 'ok') {
+                showToast('Configuration saved', 'success');
+            } else {
+                showToast('Error: ' + (data.message || 'Unknown'), 'error');
+            }
+        })
+        .catch(err => showToast('Failed to save configuration', 'error'));
+    }
+
+    // ======================================================================
+    // Init + auto-refresh
+    // ======================================================================
+
+    loadPortfolio();
+    loadPositions();
+    loadOrders();
+    loadConfig();
+
+    // Auto-refresh portfolio every 30 seconds
+    setInterval(loadPortfolio, 30000);
+</script>
+
+</body>
+</html>
