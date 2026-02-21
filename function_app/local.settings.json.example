@@ -3,9 +3,9 @@
   "Values": {
     "FUNCTIONS_WORKER_RUNTIME": "python",
     "AzureWebJobsStorage": "UseDevelopmentStorage=true",
-    "ALPACA_API_KEY": "your-alpaca-api-key-here",
-    "ALPACA_SECRET_KEY": "your-alpaca-secret-key-here",
-    "WEBHOOK_AUTH_TOKEN": "your-webhook-auth-token-here",
+    "ALPACA_API_KEY": "",
+    "ALPACA_SECRET_KEY": "",
+    "WEBHOOK_AUTH_TOKEN": "",
     "ALPACA_PAPER": "true"
   },
   "Host": {
