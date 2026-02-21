@@ -1,6 +1,34 @@
-# Crassus 2.0
+# Crassus 2.5
 
-Azure Function that receives TradingView webhook alerts and places **bracket orders** (stocks) and **risk-sized options orders** on Alpaca.
+Azure Function that receives TradingView webhook alerts and places **bracket orders** (stocks) and **risk-sized options orders** on Alpaca. Includes a local dashboard GUI for configuration and portfolio monitoring.
+
+## Quick Start (Windows)
+
+1. Clone the repo:
+   ```
+   git clone https://github.com/AutosortermkI/Crassus-2.5.git
+   cd Crassus-2.5
+   ```
+
+2. Run setup (installs everything + prompts for your API keys):
+   ```
+   setup.bat
+   ```
+
+3. Launch the dashboard:
+   ```
+   run_dashboard.bat
+   ```
+
+4. (Optional) Run the trading function locally:
+   ```
+   run_crassus.bat
+   ```
+
+5. (Optional) Run tests:
+   ```
+   run_tests.bat
+   ```
 
 ## Architecture
 
@@ -20,13 +48,21 @@ function_app/
 ├── requirements.txt         # Python dependencies
 └── local.settings.json      # Env var template (gitignored)
 
+dashboard/
+├── app.py                   # Flask web UI (http://localhost:5050)
+├── config_manager.py        # .env read/write with parameter metadata
+├── alpaca_client.py         # Alpaca portfolio/positions/orders client
+└── templates/
+    └── index.html           # Single-page dashboard (dark theme)
+
 tests/
 ├── conftest.py              # Adds function_app/ to sys.path
 ├── test_parser.py           # 26 tests: parsing, edge cases, example payloads
 ├── test_strategy.py         # 13 tests: bracket math, strategy lookup
 ├── test_risk.py             # 9 tests:  options qty sizing, edge cases
 ├── test_greeks.py           # 47 tests: BS pricing, Greeks, IV solver, edge cases
-└── test_yahoo_client.py     # 26 tests: Yahoo client, option chains, error handling
+├── test_yahoo_client.py     # 26 tests: Yahoo client, option chains, error handling
+└── test_live_alpaca.py      # Live Alpaca paper trading integration test
 ```
 
 ## Request flow
@@ -248,32 +284,42 @@ When Yahoo Finance is enabled (default), the screener uses Yahoo for richer mark
 
 > **Note:** Do NOT add `yfinance`. The direct API approach via `requests` + `YahooCrumbClient` is more reliable and avoids the heavy `yfinance` dependency tree.
 
-## Setup
+## Advanced / Manual Setup
+
+If you prefer to set things up manually instead of using `setup.bat`:
 
 1. **Clone and install**
    ```bash
-   git clone <repo-url>
-   cd Crassus-2.0
+   git clone https://github.com/AutosortermkI/Crassus-2.5.git
+   cd Crassus-2.5
    python3 -m venv .venv
-   source .venv/bin/activate
+   source .venv/bin/activate          # Linux/Mac
+   # .venv\Scripts\activate           # Windows
    pip install -r function_app/requirements.txt
+   pip install -r requirements-dashboard.txt   # For the dashboard
    ```
 
 2. **Configure credentials**
-   - Copy `.env.example` to `.env` and fill in real values.
-   - Copy `function_app/local.settings.json` and set the `Values` section.
+   - Copy `.env.example` to `.env` and fill in your Alpaca API keys.
+   - Copy `function_app/local.settings.json.example` to `function_app/local.settings.json` and set the `Values` section.
 
-3. **Run locally**
+3. **Run the dashboard**
+   ```bash
+   python dashboard/app.py
+   ```
+   Opens at `http://localhost:5050`
+
+4. **Run the trading function locally**
    ```bash
    cd function_app
    func start
    ```
    Endpoint: `http://localhost:7071/api/trade` (POST)
 
-4. **Run tests**
+5. **Run tests**
    ```bash
    pip install pytest
-   python -m pytest tests/ -v    # 121 tests across 5 modules
+   python -m pytest tests/ -v
    ```
 
 ## Example curl
