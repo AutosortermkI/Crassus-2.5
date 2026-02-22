@@ -2,7 +2,7 @@
 
 Azure Function that receives TradingView webhook alerts and places **bracket orders** (stocks) and **risk-sized options orders** on Alpaca. Includes a local dashboard GUI for configuration and portfolio monitoring.
 
-## Quick Start (Windows)
+## Quick Start
 
 1. Clone the repo:
    ```
@@ -11,24 +11,28 @@ Azure Function that receives TradingView webhook alerts and places **bracket ord
    ```
 
 2. Run setup (installs everything + prompts for your API keys):
+
+   **macOS / Linux:**
+   ```bash
+   ./setup.sh
+   ```
+
+   **Windows:**
    ```
    setup.bat
    ```
 
 3. Launch the dashboard:
-   ```
-   run_dashboard.bat
-   ```
+
+   **macOS / Linux:** `./run_dashboard.sh`  |  **Windows:** `run_dashboard.bat`
 
 4. (Optional) Run the trading function locally:
-   ```
-   run_crassus.bat
-   ```
+
+   **macOS / Linux:** `./run_crassus.sh`  |  **Windows:** `run_crassus.bat`
 
 5. (Optional) Run tests:
-   ```
-   run_tests.bat
-   ```
+
+   **macOS / Linux:** `./run_tests.sh`  |  **Windows:** `run_tests.bat`
 
 ## Architecture
 
