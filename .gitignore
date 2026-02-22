@@ -12,6 +12,7 @@ env/
 .env
 config/.env
 config/local.env
+deploy_azure.bat
 secrets/
 *.pem
 
