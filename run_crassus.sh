@@ -1,5 +1,15 @@
 #!/usr/bin/env bash
 set -e
-source "$(dirname "$0")/.venv/bin/activate"
-cd "$(dirname "$0")/function_app"
+DIR="$(cd "$(dirname "$0")" && pwd)"
+
+if [ ! -d "$DIR/.venv" ]; then
+    echo "Virtual environment not found. Creating and installing deps..."
+    python3 -m venv "$DIR/.venv"
+    source "$DIR/.venv/bin/activate"
+    pip install -r "$DIR/function_app/requirements.txt" --quiet
+else
+    source "$DIR/.venv/bin/activate"
+fi
+
+cd "$DIR/function_app"
 func start
