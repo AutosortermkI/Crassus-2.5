@@ -161,7 +161,22 @@ echo "[OK] Application settings configured."
 echo
 echo "Deploying function code..."
 pushd "$SCRIPT_DIR/function_app" >/dev/null
-func azure functionapp publish "$FUNCTION_APP_NAME"
+
+# Ensure local.settings.json exists (func CLI needs it for runtime detection)
+if [ ! -f "local.settings.json" ]; then
+    cat > local.settings.json << 'SETTINGSEOF'
+{
+  "IsEncrypted": false,
+  "Values": {
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true"
+  }
+}
+SETTINGSEOF
+    echo "[OK] Created local.settings.json for deployment."
+fi
+
+func azure functionapp publish "$FUNCTION_APP_NAME" --python
 popd >/dev/null
 echo "[OK] Deployment complete."
 
