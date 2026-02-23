@@ -16,8 +16,43 @@ _env_path = Path(__file__).resolve().parent.parent / ".env"
 load_dotenv(_env_path)
 
 
+def reload_env():
+    """Re-read .env from disk so newly saved credentials take effect."""
+    load_dotenv(_env_path, override=True)
+
+
+def has_credentials() -> bool:
+    """Return True if API key and secret are present (non-empty) in env."""
+    reload_env()
+    api_key = os.environ.get("ALPACA_API_KEY", "").strip()
+    secret_key = os.environ.get("ALPACA_SECRET_KEY", "").strip()
+    return bool(api_key) and bool(secret_key)
+
+
+def verify_credentials() -> dict:
+    """Test credentials against Alpaca and return status dict.
+
+    Returns:
+        {"ok": True, "account_id": "...", "paper": True/False}  on success
+        {"ok": False, "error": "..."}  on failure
+    """
+    reload_env()
+    api_key = os.environ.get("ALPACA_API_KEY", "").strip()
+    secret_key = os.environ.get("ALPACA_SECRET_KEY", "").strip()
+    if not api_key or not secret_key:
+        return {"ok": False, "error": "API key and secret key are required."}
+    paper = os.environ.get("ALPACA_PAPER", "true").lower() == "true"
+    try:
+        client = TradingClient(api_key, secret_key, paper=paper)
+        account = client.get_account()
+        return {"ok": True, "account_id": str(account.id), "paper": paper}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 def _get_client() -> TradingClient:
     """Create an Alpaca TradingClient from .env credentials."""
+    reload_env()
     api_key = os.environ.get("ALPACA_API_KEY", "")
     secret_key = os.environ.get("ALPACA_SECRET_KEY", "")
     paper = os.environ.get("ALPACA_PAPER", "true").lower() == "true"

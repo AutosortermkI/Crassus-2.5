@@ -238,9 +238,143 @@
 
         /* Loading spinner */
         .loading { text-align: center; padding: 24px; color: #8888aa; }
+
+        /* ---- Setup overlay ---- */
+        .setup-overlay {
+            position: fixed;
+            inset: 0;
+            background: #1a1a2e;
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .setup-overlay.hidden { display: none; }
+        .setup-card {
+            background: #16213e;
+            border: 1px solid #0f3460;
+            border-radius: 12px;
+            padding: 40px 48px;
+            width: 460px;
+            max-width: 95vw;
+        }
+        .setup-card h1 {
+            font-size: 24px;
+            color: #fff;
+            margin-bottom: 4px;
+        }
+        .setup-card .subtitle {
+            color: #8888aa;
+            font-size: 14px;
+            margin-bottom: 28px;
+        }
+        .setup-card label {
+            display: block;
+            font-size: 13px;
+            color: #a0a0c0;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 6px;
+            margin-top: 18px;
+        }
+        .setup-card label:first-of-type { margin-top: 0; }
+        .setup-card input[type="text"],
+        .setup-card input[type="password"] {
+            width: 100%;
+            background: #1a1a2e;
+            border: 1px solid #0f3460;
+            color: #e0e0e0;
+            padding: 10px 14px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: 'Courier New', monospace;
+        }
+        .setup-card input:focus {
+            outline: none;
+            border-color: #00b894;
+        }
+        .setup-card .paper-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-top: 20px;
+        }
+        .setup-card .paper-row span {
+            font-size: 14px;
+            color: #e0e0e0;
+        }
+        .setup-card .btn-connect {
+            width: 100%;
+            margin-top: 28px;
+            padding: 12px;
+            font-size: 15px;
+            font-weight: 700;
+            background: #00b894;
+            color: #1a1a2e;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        .setup-card .btn-connect:hover { opacity: 0.85; }
+        .setup-card .btn-connect:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .setup-error {
+            margin-top: 14px;
+            padding: 10px 14px;
+            background: rgba(225, 112, 85, 0.15);
+            border: 1px solid #e17055;
+            border-radius: 6px;
+            color: #e17055;
+            font-size: 13px;
+            display: none;
+        }
+        .setup-link {
+            display: block;
+            text-align: center;
+            margin-top: 16px;
+            font-size: 12px;
+            color: #8888aa;
+        }
+        .setup-link a {
+            color: #00b894;
+            text-decoration: none;
+        }
+        .setup-link a:hover { text-decoration: underline; }
     </style>
 </head>
 <body>
+
+<!-- ============ Credentials Setup Gate ============ -->
+<div id="setupOverlay" class="setup-overlay">
+    <div class="setup-card">
+        <h1>Crassus 2.5</h1>
+        <p class="subtitle">Connect your Alpaca account to get started.</p>
+
+        <label for="setupApiKey">API Key</label>
+        <input type="text" id="setupApiKey" placeholder="PK..." autocomplete="off" spellcheck="false">
+
+        <label for="setupSecretKey">Secret Key</label>
+        <input type="password" id="setupSecretKey" placeholder="Your Alpaca secret key" autocomplete="off" spellcheck="false">
+
+        <div class="paper-row">
+            <div id="setupPaperToggle" class="toggle active" onclick="this.classList.toggle('active')"></div>
+            <span>Paper Trading (sandbox)</span>
+        </div>
+
+        <button class="btn-connect" id="setupConnectBtn" onclick="submitCredentials()">
+            Connect to Alpaca
+        </button>
+
+        <div id="setupError" class="setup-error"></div>
+
+        <div class="setup-link">
+            Don't have an account? <a href="https://app.alpaca.markets/signup" target="_blank" rel="noopener">Sign up at Alpaca</a>
+        </div>
+    </div>
+</div>
 
 <div class="header">
     <h1>Crassus 2.5</h1>
@@ -601,16 +735,99 @@
     }
 
     // ======================================================================
+    // Credentials gate
+    // ======================================================================
+
+    function showSetup() {
+        document.getElementById('setupOverlay').classList.remove('hidden');
+    }
+
+    function hideSetup() {
+        document.getElementById('setupOverlay').classList.add('hidden');
+    }
+
+    function submitCredentials() {
+        const btn = document.getElementById('setupConnectBtn');
+        const errBox = document.getElementById('setupError');
+        const apiKey = document.getElementById('setupApiKey').value.trim();
+        const secretKey = document.getElementById('setupSecretKey').value.trim();
+        const paper = document.getElementById('setupPaperToggle').classList.contains('active');
+
+        errBox.style.display = 'none';
+
+        if (!apiKey || !secretKey) {
+            errBox.textContent = 'Both API Key and Secret Key are required.';
+            errBox.style.display = 'block';
+            return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = 'Connecting...';
+
+        fetch('/api/credentials/save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ api_key: apiKey, secret_key: secretKey, paper: paper }),
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status === 'ok') {
+                hideSetup();
+                showToast('Connected to Alpaca', 'success');
+                initDashboard();
+            } else {
+                errBox.textContent = data.message || 'Authentication failed. Check your keys.';
+                errBox.style.display = 'block';
+            }
+        })
+        .catch(() => {
+            errBox.textContent = 'Network error. Is the dashboard server running?';
+            errBox.style.display = 'block';
+        })
+        .finally(() => {
+            btn.disabled = false;
+            btn.textContent = 'Connect to Alpaca';
+        });
+    }
+
+    // Allow Enter key to submit
+    document.getElementById('setupSecretKey').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') submitCredentials();
+    });
+
+    // ======================================================================
     // Init + auto-refresh
     // ======================================================================
 
-    loadPortfolio();
-    loadPositions();
-    loadOrders();
-    loadConfig();
+    function initDashboard() {
+        loadPortfolio();
+        loadPositions();
+        loadOrders();
+        loadConfig();
+    }
+
+    // Check credentials on page load
+    fetch('/api/credentials/check')
+        .then(r => r.json())
+        .then(data => {
+            if (data.status === 'ok') {
+                hideSetup();
+                initDashboard();
+            } else {
+                showSetup();
+            }
+        })
+        .catch(() => {
+            // Can't reach server — show setup anyway
+            showSetup();
+        });
 
     // Auto-refresh portfolio every 30 seconds
-    setInterval(loadPortfolio, 30000);
+    setInterval(() => {
+        if (document.getElementById('setupOverlay').classList.contains('hidden')) {
+            loadPortfolio();
+        }
+    }, 30000);
 </script>
 
 </body>
