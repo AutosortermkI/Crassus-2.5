@@ -15,8 +15,11 @@ import json
 
 from flask import Flask, render_template, request, jsonify
 
-from config_manager import get_config, save_config, SECRET_KEYS
-from alpaca_client import get_account_summary, get_positions, get_recent_orders
+from config_manager import get_config, save_config, save_credentials, SECRET_KEYS
+from alpaca_client import (
+    get_account_summary, get_positions, get_recent_orders,
+    has_credentials, verify_credentials,
+)
 
 app = Flask(__name__)
 
@@ -29,6 +32,68 @@ app = Flask(__name__)
 def index():
     """Serve the single-page dashboard."""
     return render_template("index.html")
+
+
+# ======================================================================
+# Credential API routes
+# ======================================================================
+
+@app.route("/api/credentials/check", methods=["GET"])
+def api_credentials_check():
+    """Check whether credentials are configured and valid."""
+    try:
+        if not has_credentials():
+            return jsonify({"status": "missing"})
+        result = verify_credentials()
+        if result["ok"]:
+            return jsonify({
+                "status": "ok",
+                "account_id": result["account_id"],
+                "paper": result["paper"],
+            })
+        else:
+            return jsonify({"status": "invalid", "message": result["error"]})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/api/credentials/save", methods=["POST"])
+def api_credentials_save():
+    """Save Alpaca credentials to .env and verify they work."""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"status": "error", "message": "No data provided"}), 400
+
+        api_key = (data.get("api_key") or "").strip()
+        secret_key = (data.get("secret_key") or "").strip()
+        paper = data.get("paper", True)
+
+        if not api_key or not secret_key:
+            return jsonify({
+                "status": "error",
+                "message": "API Key and Secret Key are required.",
+            }), 400
+
+        # Save first so verify_credentials() picks them up
+        save_credentials(api_key, secret_key, paper=paper)
+
+        # Verify they actually work
+        result = verify_credentials()
+        if result["ok"]:
+            return jsonify({
+                "status": "ok",
+                "message": "Credentials saved and verified.",
+                "account_id": result["account_id"],
+                "paper": result["paper"],
+            })
+        else:
+            return jsonify({
+                "status": "invalid",
+                "message": "Saved, but authentication failed: " + result["error"],
+            })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 # ======================================================================
