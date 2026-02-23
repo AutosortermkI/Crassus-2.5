@@ -35,6 +35,7 @@ from options_screener import (
     NoContractFoundError,
 )
 from options_orders import OptionsOrderParams, submit_options_entry_order
+from exit_monitor import ExitTarget, register_exit_target, check_options_exits
 from risk import compute_options_qty, compute_stock_qty, get_max_dollar_risk
 from utils import (
     generate_correlation_id,
@@ -151,6 +152,29 @@ def trade(req: func.HttpRequest) -> func.HttpResponse:
 
 
 # ======================================================================
+# Timer Trigger: Options exit monitoring (runs every minute)
+# ======================================================================
+
+@app.timer_trigger(schedule="0 */1 * * * *", arg_name="timer",
+                   run_on_startup=False)
+def check_options_exits_timer(timer: func.TimerRequest) -> None:
+    """Poll open options positions and submit exit orders at TP/SL."""
+    correlation_id = generate_correlation_id()
+    log_structured(logger, logging.INFO, "Options exit monitor tick", correlation_id)
+    try:
+        actions = check_options_exits(trading_client)
+        if actions:
+            log_structured(
+                logger, logging.INFO,
+                f"Exit monitor actions: {len(actions)}",
+                correlation_id,
+                actions=json.dumps(actions),
+            )
+    except Exception as e:
+        log_structured(logger, logging.ERROR, f"Exit monitor error: {e}", correlation_id)
+
+
+# ======================================================================
 # Internal route handlers
 # ======================================================================
 
@@ -249,6 +273,17 @@ def _handle_options_order(signal, strategy_config, correlation_id: str) -> func.
     )
 
     order_id = submit_options_entry_order(trading_client, params, correlation_id)
+
+    # Register TP/SL targets so the exit monitor can track this position
+    register_exit_target(ExitTarget(
+        contract_symbol=contract.symbol,
+        underlying=signal.ticker,
+        qty=qty,
+        entry_price=contract.premium,
+        take_profit_price=tp_price,
+        stop_loss_price=sl_price,
+        correlation_id=correlation_id,
+    ))
 
     log_structured(
         logger, logging.INFO, "Options order completed", correlation_id,

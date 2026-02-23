@@ -12,8 +12,6 @@ env/
 .env
 config/.env
 config/local.env
-deploy_azure.bat
-deploy_azure.sh
 secrets/
 *.pem
 
@@ -27,6 +25,9 @@ secrets/
 # Build / deploy
 dist/
 *.egg-info/
+
+# Runtime state
+.options_targets.json
 
 # Test / coverage
 .pytest_cache/

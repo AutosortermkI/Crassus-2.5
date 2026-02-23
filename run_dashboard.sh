@@ -8,7 +8,7 @@ if [ ! -d "$DIR/.venv" ]; then
     python3 -m venv "$DIR/.venv"
     source "$DIR/.venv/bin/activate"
     pip install -r "$DIR/function_app/requirements.txt" --quiet
-    pip install flask python-dotenv alpaca-py --quiet
+    pip install flask python-dotenv alpaca-py requests --quiet
     echo "Setup complete. Launch again or run ./setup.sh for full credential setup."
 else
     source "$DIR/.venv/bin/activate"
