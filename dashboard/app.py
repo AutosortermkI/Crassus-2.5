@@ -15,7 +15,7 @@ import json
 
 from flask import Flask, render_template, request, jsonify
 
-from config_manager import get_config, save_config, save_credentials, SECRET_KEYS
+from config_manager import get_config, save_config, save_credentials, read_env, SECRET_KEYS
 from alpaca_client import (
     get_account_summary, get_positions, get_recent_orders,
     has_credentials, verify_credentials,
@@ -152,6 +152,104 @@ def api_orders():
     try:
         orders = get_recent_orders(limit=20)
         return jsonify({"status": "ok", "orders": orders})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# ======================================================================
+# Webhook API routes
+# ======================================================================
+
+@app.route("/api/webhook/info", methods=["GET"])
+def api_webhook_info():
+    """Return webhook URL and auth token for TradingView setup."""
+    try:
+        env = read_env()
+        token = env.get("WEBHOOK_AUTH_TOKEN", "")
+        # Default endpoint assumes Azure deployment name
+        return jsonify({
+            "status": "ok",
+            "local_url": "http://localhost:7071/api/trade",
+            "azure_url": "https://crassus-25.azurewebsites.net/api/trade",
+            "auth_token": token,
+            "has_token": bool(token),
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/api/webhook/token", methods=["POST"])
+def api_webhook_token_save():
+    """Generate or save a webhook auth token."""
+    try:
+        import secrets as _secrets
+        from config_manager import ENV_PATH
+
+        data = request.get_json() or {}
+        token = (data.get("token") or "").strip()
+
+        if not token:
+            token = _secrets.token_hex(16)
+
+        # save_config updates existing keys; for new keys we write directly
+        env = read_env()
+        if "WEBHOOK_AUTH_TOKEN" in env:
+            save_config({"WEBHOOK_AUTH_TOKEN": token})
+        else:
+            with open(ENV_PATH, "a") as f:
+                f.write(f"\nWEBHOOK_AUTH_TOKEN={token}\n")
+
+        return jsonify({"status": "ok", "token": token})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/api/webhook/test", methods=["POST"])
+def api_webhook_test():
+    """Send a test webhook to the local or Azure function endpoint."""
+    try:
+        import requests as http_requests
+
+        data = request.get_json() or {}
+        target = data.get("target", "local")
+        env = read_env()
+        token = env.get("WEBHOOK_AUTH_TOKEN", "")
+
+        if target == "azure":
+            url = "https://crassus-25.azurewebsites.net/api/trade"
+        else:
+            url = "http://localhost:7071/api/trade"
+
+        test_payload = {
+            "content": (
+                "**New Buy Signal:**\n"
+                "AAPL 5 Min Candle\n"
+                "Strategy: bollinger_mean_reversion\n"
+                "Mode: stock\n"
+                "Price: 189.50"
+            )
+        }
+
+        resp = http_requests.post(
+            url,
+            json=test_payload,
+            headers={
+                "Content-Type": "application/json",
+                "X-Webhook-Token": token,
+            },
+            timeout=10,
+        )
+
+        return jsonify({
+            "status": "ok",
+            "response_code": resp.status_code,
+            "response_body": resp.json() if resp.headers.get("content-type", "").startswith("application/json") else resp.text,
+        })
+    except http_requests.ConnectionError:
+        return jsonify({
+            "status": "error",
+            "message": f"Cannot connect to {url}. Is the function app running?",
+        })
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 

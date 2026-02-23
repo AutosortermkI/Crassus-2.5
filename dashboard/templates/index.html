@@ -343,6 +343,130 @@
             text-decoration: none;
         }
         .setup-link a:hover { text-decoration: underline; }
+
+        /* ---- Webhook widget ---- */
+        .webhook-section { margin-top: 8px; }
+        .webhook-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+        .webhook-row label {
+            font-size: 12px;
+            color: #8888aa;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            min-width: 100px;
+            flex-shrink: 0;
+        }
+        .webhook-url-box {
+            flex: 1;
+            background: #1a1a2e;
+            border: 1px solid #0f3460;
+            border-radius: 4px;
+            padding: 8px 12px;
+            color: #e0e0e0;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            overflow-x: auto;
+            white-space: nowrap;
+            user-select: all;
+        }
+        .btn-copy {
+            background: #0f3460;
+            color: #e0e0e0;
+            border: none;
+            border-radius: 4px;
+            padding: 8px 12px;
+            font-size: 12px;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: background 0.2s;
+        }
+        .btn-copy:hover { background: #00b894; color: #1a1a2e; }
+        .webhook-alert-box {
+            background: #1a1a2e;
+            border: 1px solid #0f3460;
+            border-radius: 6px;
+            padding: 14px 16px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.7;
+            color: #e0e0e0;
+            white-space: pre-wrap;
+            margin: 12px 0;
+            position: relative;
+        }
+        .webhook-alert-box .copy-corner {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+        }
+        .webhook-tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 12px;
+        }
+        .webhook-tab {
+            padding: 6px 16px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            background: #1a1a2e;
+            color: #8888aa;
+            border: 1px solid #0f3460;
+            transition: all 0.2s;
+        }
+        .webhook-tab.active {
+            background: #00b894;
+            color: #1a1a2e;
+            border-color: #00b894;
+        }
+        .webhook-token-display {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .webhook-token-display .token-value {
+            flex: 1;
+            background: #1a1a2e;
+            border: 1px solid #0f3460;
+            border-radius: 4px;
+            padding: 8px 12px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            color: #e0e0e0;
+        }
+        .webhook-test-result {
+            margin-top: 12px;
+            padding: 10px 14px;
+            border-radius: 6px;
+            font-size: 13px;
+            display: none;
+        }
+        .webhook-test-result.success {
+            background: rgba(0, 184, 148, 0.15);
+            border: 1px solid #00b894;
+            color: #00b894;
+        }
+        .webhook-test-result.error {
+            background: rgba(225, 112, 85, 0.15);
+            border: 1px solid #e17055;
+            color: #e17055;
+        }
+        .webhook-instructions {
+            font-size: 13px;
+            color: #a0a0c0;
+            line-height: 1.8;
+            margin-bottom: 16px;
+        }
+        .webhook-instructions strong { color: #e0e0e0; }
+        .webhook-instructions ol {
+            padding-left: 20px;
+            margin: 8px 0;
+        }
     </style>
 </head>
 <body>
@@ -416,7 +540,90 @@
         </div>
     </div>
 
-    <!-- Section 4: Trading Parameters -->
+    <!-- Section 4: TradingView Webhook -->
+    <div class="card">
+        <h2>TradingView Webhook</h2>
+        <div class="webhook-section">
+
+            <div class="webhook-instructions">
+                <strong>How to connect TradingView alerts to Crassus:</strong>
+                <ol>
+                    <li>In TradingView, create or edit an alert on your indicator/strategy.</li>
+                    <li>Under <strong>Notifications</strong>, enable <strong>Webhook URL</strong> and paste the URL below.</li>
+                    <li>Set the <strong>Alert message</strong> to the template shown below (customize ticker, strategy, mode).</li>
+                    <li>Add a custom header: <strong>X-Webhook-Token</strong> with the auth token shown below.</li>
+                </ol>
+            </div>
+
+            <!-- Webhook URL -->
+            <div class="webhook-tabs">
+                <div class="webhook-tab active" onclick="setWebhookTarget('local', this)">Local</div>
+                <div class="webhook-tab" onclick="setWebhookTarget('azure', this)">Azure (Deployed)</div>
+            </div>
+
+            <div class="webhook-row">
+                <label>Webhook URL</label>
+                <div class="webhook-url-box" id="webhookUrl">http://localhost:7071/api/trade</div>
+                <button class="btn-copy" onclick="copyToClipboard('webhookUrl')">Copy</button>
+            </div>
+
+            <!-- Auth token -->
+            <div class="webhook-row">
+                <label>Auth Token</label>
+                <div class="webhook-token-display">
+                    <div class="webhook-url-box" id="webhookToken" style="flex:1">Loading...</div>
+                    <button class="btn-copy" onclick="copyToClipboard('webhookToken')">Copy</button>
+                    <button class="btn-copy" onclick="generateToken()" title="Generate new token">New</button>
+                </div>
+            </div>
+
+            <!-- Alert message templates -->
+            <h3 style="font-size:13px; color:#a0a0c0; text-transform:uppercase; letter-spacing:0.5px; margin: 20px 0 8px 0;">
+                Alert Message Templates (copy into TradingView)
+            </h3>
+
+            <div class="webhook-tabs" id="templateTabs">
+                <div class="webhook-tab active" onclick="showTemplate('stock_buy', this)">Stock Buy</div>
+                <div class="webhook-tab" onclick="showTemplate('stock_sell', this)">Stock Sell</div>
+                <div class="webhook-tab" onclick="showTemplate('options_buy', this)">Options Buy</div>
+                <div class="webhook-tab" onclick="showTemplate('options_sell', this)">Options Sell</div>
+            </div>
+
+            <div class="webhook-alert-box" id="webhookTemplate">**New Buy Signal:**
+{{ticker}} {{interval}} Candle
+Strategy: bollinger_mean_reversion
+Mode: stock
+Volume: {{volume}}
+Price: {{close}}
+Time: {{timenow}}</div>
+            <div style="text-align: right; margin-top: 4px;">
+                <button class="btn-copy" onclick="copyToClipboard('webhookTemplate')">Copy Template</button>
+            </div>
+
+            <!-- JSON format (for advanced users) -->
+            <h3 style="font-size:13px; color:#a0a0c0; text-transform:uppercase; letter-spacing:0.5px; margin: 20px 0 8px 0;">
+                Full JSON Payload (advanced)
+            </h3>
+            <div class="webhook-alert-box" id="webhookJson">{"content": "**New Buy Signal:**\n{{ticker}} {{interval}} Candle\nStrategy: bollinger_mean_reversion\nMode: stock\nVolume: {{volume}}\nPrice: {{close}}\nTime: {{timenow}}"}</div>
+            <div style="text-align: right; margin-top: 4px;">
+                <button class="btn-copy" onclick="copyToClipboard('webhookJson')">Copy JSON</button>
+            </div>
+
+            <!-- Test button -->
+            <div style="margin-top: 20px; display: flex; gap: 8px; align-items: center;">
+                <button class="btn btn-primary" id="webhookTestBtn" onclick="testWebhook()">
+                    Send Test Webhook
+                </button>
+                <span style="font-size: 12px; color: #8888aa;" id="webhookTestNote">
+                    Sends a test AAPL buy signal to the selected endpoint
+                </span>
+            </div>
+            <div class="webhook-test-result" id="webhookTestResult"></div>
+
+        </div>
+    </div>
+
+    <!-- Section 5: Trading Parameters -->
     <div class="card">
         <h2>Trading Parameters</h2>
         <div id="configEditor">
@@ -735,6 +942,137 @@
     }
 
     // ======================================================================
+    // Webhook widget
+    // ======================================================================
+
+    let webhookTarget = 'local';
+
+    const alertTemplates = {
+        stock_buy: `**New Buy Signal:**\n{{ticker}} {{interval}} Candle\nStrategy: bollinger_mean_reversion\nMode: stock\nVolume: {{volume}}\nPrice: {{close}}\nTime: {{timenow}}`,
+        stock_sell: `**New Sell Signal:**\n{{ticker}} {{interval}} Candle\nStrategy: bollinger_mean_reversion\nMode: stock\nVolume: {{volume}}\nPrice: {{close}}\nTime: {{timenow}}`,
+        options_buy: `**New Buy Signal:**\n{{ticker}} {{interval}} Candle\nStrategy: lorentzian_classification\nMode: options\nVolume: {{volume}}\nPrice: {{close}}\nTime: {{timenow}}`,
+        options_sell: `**New Sell Signal:**\n{{ticker}} {{interval}} Candle\nStrategy: lorentzian_classification\nMode: options\nVolume: {{volume}}\nPrice: {{close}}\nTime: {{timenow}}`,
+    };
+
+    function setWebhookTarget(target, tabEl) {
+        webhookTarget = target;
+        tabEl.parentElement.querySelectorAll('.webhook-tab').forEach(t => t.classList.remove('active'));
+        tabEl.classList.add('active');
+
+        fetch('/api/webhook/info')
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'ok') {
+                    const url = target === 'azure' ? data.azure_url : data.local_url;
+                    document.getElementById('webhookUrl').textContent = url;
+                }
+            });
+    }
+
+    function showTemplate(key, tabEl) {
+        tabEl.parentElement.querySelectorAll('.webhook-tab').forEach(t => t.classList.remove('active'));
+        tabEl.classList.add('active');
+
+        const template = alertTemplates[key];
+        document.getElementById('webhookTemplate').textContent = template;
+
+        // Update JSON view
+        const jsonPayload = JSON.stringify({ content: template });
+        document.getElementById('webhookJson').textContent = jsonPayload;
+    }
+
+    function copyToClipboard(elementId) {
+        const el = document.getElementById(elementId);
+        const text = el.textContent || el.innerText;
+        navigator.clipboard.writeText(text).then(() => {
+            showToast('Copied to clipboard', 'success');
+        }).catch(() => {
+            // Fallback for older browsers
+            const range = document.createRange();
+            range.selectNodeContents(el);
+            window.getSelection().removeAllRanges();
+            window.getSelection().addRange(range);
+            document.execCommand('copy');
+            window.getSelection().removeAllRanges();
+            showToast('Copied to clipboard', 'success');
+        });
+    }
+
+    function loadWebhookInfo() {
+        fetch('/api/webhook/info')
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'ok') {
+                    const url = webhookTarget === 'azure' ? data.azure_url : data.local_url;
+                    document.getElementById('webhookUrl').textContent = url;
+                    if (data.has_token) {
+                        const token = data.auth_token;
+                        document.getElementById('webhookToken').textContent = token;
+                    } else {
+                        document.getElementById('webhookToken').textContent = '(not set - click New to generate)';
+                    }
+                }
+            });
+    }
+
+    function generateToken() {
+        fetch('/api/webhook/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({}),
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status === 'ok') {
+                document.getElementById('webhookToken').textContent = data.token;
+                showToast('New webhook token generated and saved', 'success');
+            } else {
+                showToast('Error: ' + (data.message || 'Unknown'), 'error');
+            }
+        });
+    }
+
+    function testWebhook() {
+        const btn = document.getElementById('webhookTestBtn');
+        const result = document.getElementById('webhookTestResult');
+        btn.disabled = true;
+        btn.textContent = 'Sending...';
+        result.style.display = 'none';
+
+        fetch('/api/webhook/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ target: webhookTarget }),
+        })
+        .then(r => r.json())
+        .then(data => {
+            result.style.display = 'block';
+            if (data.status === 'ok') {
+                const code = data.response_code;
+                if (code >= 200 && code < 300) {
+                    result.className = 'webhook-test-result success';
+                    result.textContent = `Success (${code}): ` + JSON.stringify(data.response_body, null, 2);
+                } else {
+                    result.className = 'webhook-test-result error';
+                    result.textContent = `Response ${code}: ` + JSON.stringify(data.response_body, null, 2);
+                }
+            } else {
+                result.className = 'webhook-test-result error';
+                result.textContent = data.message || 'Test failed';
+            }
+        })
+        .catch(() => {
+            result.style.display = 'block';
+            result.className = 'webhook-test-result error';
+            result.textContent = 'Network error sending test';
+        })
+        .finally(() => {
+            btn.disabled = false;
+            btn.textContent = 'Send Test Webhook';
+        });
+    }
+
+    // ======================================================================
     // Credentials gate
     // ======================================================================
 
@@ -804,6 +1142,7 @@
         loadPositions();
         loadOrders();
         loadConfig();
+        loadWebhookInfo();
     }
 
     // Check credentials on page load
