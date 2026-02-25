@@ -68,6 +68,13 @@ fi
 if [ -z "$WEBHOOK_AUTH_TOKEN" ]; then
     WEBHOOK_AUTH_TOKEN=$(python3 -c "import secrets; print(secrets.token_hex(16))")
     echo "[INFO] Auto-generated WEBHOOK_AUTH_TOKEN: $WEBHOOK_AUTH_TOKEN"
+    # Write it back to .env so local and Azure stay in sync
+    if grep -q "^WEBHOOK_AUTH_TOKEN=" "$ENV_FILE" 2>/dev/null; then
+        sed -i.bak "s/^WEBHOOK_AUTH_TOKEN=.*/WEBHOOK_AUTH_TOKEN=$WEBHOOK_AUTH_TOKEN/" "$ENV_FILE" && rm -f "${ENV_FILE}.bak"
+    else
+        echo "WEBHOOK_AUTH_TOKEN=$WEBHOOK_AUTH_TOKEN" >> "$ENV_FILE"
+    fi
+    echo "[OK] Token saved to .env"
 fi
 
 echo "[OK] Credentials loaded from .env"
