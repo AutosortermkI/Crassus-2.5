@@ -551,7 +551,8 @@
                     <li>In TradingView, create or edit an alert on your indicator/strategy.</li>
                     <li>Under <strong>Notifications</strong>, enable <strong>Webhook URL</strong> and paste the URL below.</li>
                     <li>Set the <strong>Alert message</strong> to the template shown below (customize ticker, strategy, mode).</li>
-                    <li>Add a custom header: <strong>X-Webhook-Token</strong> with the auth token shown below.</li>
+                    <li><strong>Easiest:</strong> Use the <em>Full URL (with token)</em> below — paste it as the Webhook URL in TradingView. No custom headers needed.</li>
+                    <li><em>Alternative:</em> Use the base Webhook URL and add a custom header <code>X-Webhook-Token</code> with the auth token (requires TradingView Pro+).</li>
                 </ol>
             </div>
 
@@ -565,6 +566,13 @@
                 <label>Webhook URL</label>
                 <div class="webhook-url-box" id="webhookUrl">http://localhost:7071/api/trade</div>
                 <button class="btn-copy" onclick="copyToClipboard('webhookUrl')">Copy</button>
+            </div>
+
+            <!-- Full URL with token (easiest for TradingView) -->
+            <div class="webhook-row" style="background:#0d2847; border:1px solid #00b894; border-radius:6px; padding:10px;">
+                <label style="color:#00b894; font-weight:bold;">Full URL (paste into TradingView)</label>
+                <div class="webhook-url-box" id="webhookFullUrl" style="word-break:break-all;">Loading...</div>
+                <button class="btn-copy" onclick="copyToClipboard('webhookFullUrl')">Copy</button>
             </div>
 
             <!-- Auth token -->
@@ -1008,8 +1016,10 @@ Time: {{timenow}}</div>
                     if (data.has_token) {
                         const token = data.auth_token;
                         document.getElementById('webhookToken').textContent = token;
+                        document.getElementById('webhookFullUrl').textContent = url + '?token=' + token;
                     } else {
                         document.getElementById('webhookToken').textContent = '(not set - click New to generate)';
+                        document.getElementById('webhookFullUrl').textContent = '(generate a token first)';
                     }
                 }
             });
@@ -1025,6 +1035,8 @@ Time: {{timenow}}</div>
         .then(data => {
             if (data.status === 'ok') {
                 document.getElementById('webhookToken').textContent = data.token;
+                const baseUrl = document.getElementById('webhookUrl').textContent;
+                document.getElementById('webhookFullUrl').textContent = baseUrl + '?token=' + data.token;
                 showToast('New webhook token generated and saved', 'success');
             } else {
                 showToast('Error: ' + (data.message || 'Unknown'), 'error');
