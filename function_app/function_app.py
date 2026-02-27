@@ -5,7 +5,7 @@ HTTP trigger that receives TradingView webhook alerts and routes them
 to stock or options bracket-order logic.
 
 Flow:
-  1. Authenticate via ``X-Webhook-Token`` header
+  1. Authenticate via ``X-Webhook-Token`` header or ``?token=`` query param
   2. Parse the TradingView ``content`` string
   3. Look up strategy configuration
   4. Route to stock or options order path
@@ -74,9 +74,9 @@ def trade(req: func.HttpRequest) -> func.HttpResponse:
     log_structured(logger, logging.INFO, "Received trade request", correlation_id)
 
     # ----------------------------------------------------------------
-    # 1. Authentication: validate X-Webhook-Token header
+    # 1. Authentication: validate token (header or query parameter)
     # ----------------------------------------------------------------
-    token = req.headers.get("X-Webhook-Token", "")
+    token = req.headers.get("X-Webhook-Token", "") or req.params.get("token", "")
     if not token or token != WEBHOOK_AUTH_TOKEN:
         log_structured(logger, logging.WARNING, "Unauthorized request", correlation_id)
         return _json_response({"error": "Unauthorized", "correlation_id": correlation_id}, 401)

@@ -55,7 +55,10 @@ The dashboard's webhook widget gives you everything you need, but here's the man
 
 3. **Under Notifications**, enable **Webhook URL** and paste the URL.
 
-4. **Add a custom header:** `X-Webhook-Token` with your auth token (visible in the dashboard or `.env`).
+4. **Authenticate** — choose one method:
+   - **Option A (query parameter):** Append `?token=YOUR_TOKEN` to the webhook URL, e.g.
+     `https://crassus-25.azurewebsites.net/api/trade?token=your-secret-token`
+   - **Option B (custom header):** If your TradingView plan supports custom headers, add `X-Webhook-Token: YOUR_TOKEN` as a header.
 
 5. **Set the alert message** to one of these templates:
 
@@ -157,8 +160,7 @@ run_tests.sh / .bat          # Test runner
 TradingView alert fires
         │
         ▼
-  POST /api/trade
-  Header: X-Webhook-Token
+  POST /api/trade?token=... (or Header: X-Webhook-Token)
   Body: { "content": "..." }
         │
         ├─ 401  invalid / missing token
@@ -335,7 +337,7 @@ All variables are configurable via the dashboard UI or directly in `.env`.
 |---|---|
 | `ALPACA_API_KEY` | Alpaca API key |
 | `ALPACA_SECRET_KEY` | Alpaca secret key |
-| `WEBHOOK_AUTH_TOKEN` | Shared secret for `X-Webhook-Token` header |
+| `WEBHOOK_AUTH_TOKEN` | Shared secret (via `X-Webhook-Token` header or `?token=` query param) |
 
 ### Optional (with defaults)
 
@@ -396,7 +398,7 @@ All variables are configurable via the dashboard UI or directly in `.env`.
 |---|---|
 | **200** | Order placed successfully (JSON with order details + `correlation_id`) |
 | **400** | Bad payload, missing fields, unknown strategy, or no suitable contract found |
-| **401** | Missing or invalid `X-Webhook-Token` header |
+| **401** | Missing or invalid auth token (header or query param) |
 | **502** | Alpaca API error (upstream failure) |
 | **500** | Internal / unexpected error |
 
