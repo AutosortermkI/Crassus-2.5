@@ -1,6 +1,6 @@
 # Crassus 2.5
 
-Azure Function that receives TradingView webhook alerts and places **bracket orders** (stocks) and **risk-sized options orders** on Alpaca. Includes a local dashboard GUI for credential setup, TradingView webhook configuration, portfolio monitoring, and strategy parameter tuning.
+Azure Function that receives TradingView webhook alerts and places **bracket orders** (stocks) and **risk-sized options orders** on Alpaca. Includes a local dashboard GUI for credential setup, TradingView webhook configuration, portfolio monitoring, and strategy parameter tuning. Ships with a built-in **backtesting engine** for replaying historical data through the same strategy logic used in live trading.
 
 ---
 
@@ -23,7 +23,7 @@ That's it. The script auto-creates a virtual environment, installs all dependenc
 | `./setup.sh` | Full interactive setup (venv, deps, credential prompts, `.env` generation) |
 | `./run_dashboard.sh` | Launch the dashboard GUI (auto-installs deps if needed) |
 | `./run_crassus.sh` | Run the Azure Function locally (`http://localhost:7071/api/trade`) |
-| `./run_tests.sh` | Run the test suite (123 unit tests) |
+| `./run_tests.sh` | Run the test suite (210 unit tests) |
 | `./deploy_azure.sh` | Deploy to Azure (creates resource group, storage, Function App, pushes code) |
 
 All scripts have `.bat` equivalents for Windows.
@@ -136,14 +136,29 @@ dashboard/
 └── templates/
     └── index.html           # Single-page dashboard (dark theme)
 
+backtesting/
+├── __init__.py              # Package init with convenience imports
+├── models.py                # Bar, Signal, Order, Position, Trade, Config, Result
+├── data.py                  # CSV loading for OHLCV bars and trade signals
+├── broker.py                # Simulated order execution, bracket lifecycle, cash accounting
+├── engine.py                # Bar-by-bar replay engine with strategy integration
+├── metrics.py               # Sharpe, Sortino, Calmar, drawdown, win rate, profit factor
+└── report.py                # Human-readable text report generation
+
 tests/
-├── conftest.py              # Adds function_app/ to sys.path
+├── conftest.py              # Adds function_app/ and project root to sys.path
 ├── test_parser.py           # 26 tests: parsing, edge cases, example payloads
 ├── test_strategy.py         # 13 tests: bracket math, strategy lookup
 ├── test_risk.py             # 9 tests:  options qty sizing, edge cases
 ├── test_greeks.py           # 47 tests: BS pricing, Greeks, IV solver, edge cases
 ├── test_yahoo_client.py     # 26 tests: Yahoo client, option chains, error handling
-└── test_live_alpaca.py      # Live Alpaca paper trading integration test
+├── test_live_alpaca.py      # Live Alpaca paper trading integration test
+├── test_backtest_models.py  # 16 tests: data model creation, P&L, config defaults
+├── test_backtest_data.py    # 17 tests: CSV loading, timestamp parsing, sorting
+├── test_backtest_broker.py  # 17 tests: fills, brackets, cash, slippage, mark-to-market
+├── test_backtest_engine.py  # 12 tests: end-to-end runs, stock/options, position limits
+├── test_backtest_metrics.py # 17 tests: returns, drawdown, Sharpe, strategy breakdown
+└── test_backtest_report.py  # 5 tests:  report content, formatting, edge cases
 
 deploy_azure.sh / .bat       # One-command Azure deployment
 setup.sh / .bat              # Interactive first-time setup
@@ -204,6 +219,185 @@ TradingView alert fires
 | `lorentzian_classification` | 1.0 % | 0.8 % | 50 % | 40 % |
 
 All percentages are configurable via environment variables or the dashboard UI.
+
+---
+
+## Backtesting Engine
+
+The backtesting engine replays historical price data through the **exact same strategy logic** used in live trading — same `get_strategy()` lookup, same `compute_stock_bracket_prices()` math, same `compute_options_exit_prices()` targets, same `compute_options_qty()` risk sizing. The only difference is that orders go to a simulated broker instead of Alpaca.
+
+### Quick start
+
+```python
+from backtesting import Engine, load_bars_csv, load_signals_csv, generate_report
+from backtesting.metrics import compute_metrics
+
+# Load historical data
+bars = load_bars_csv("data/AAPL_daily.csv", ticker="AAPL")
+signals = load_signals_csv("data/signals.csv")
+
+# Run backtest
+result = Engine(initial_capital=100_000, default_stock_qty=10).run(bars, signals)
+
+# Analyze results
+metrics = compute_metrics(result)
+print(generate_report(result, metrics))
+```
+
+### CSV formats
+
+**Bars** (one row per OHLCV bar):
+
+```csv
+timestamp,open,high,low,close,volume
+2024-01-02 09:30:00,150.00,151.25,149.80,150.50,1234567
+2024-01-03 09:30:00,150.50,152.00,150.00,151.75,987654
+```
+
+An optional `ticker` column overrides the `ticker` argument to `load_bars_csv()`.
+
+**Signals** (one row per trade signal):
+
+```csv
+timestamp,ticker,side,price,strategy,mode
+2024-01-05 10:00:00,AAPL,buy,150.25,bollinger_mean_reversion,stock
+2024-01-10 14:30:00,AAPL,sell,155.00,lorentzian_classification,options
+```
+
+The `mode` column defaults to `"stock"` if omitted. Timestamps are parsed flexibly (ISO-8601, `YYYY-MM-DD`, `MM/DD/YYYY`, with or without time).
+
+### Configuration
+
+```python
+from backtesting import Engine, BacktestConfig
+
+config = BacktestConfig(
+    initial_capital=100_000,   # Starting cash ($)
+    commission_per_trade=1.0,  # Flat fee per order fill ($)
+    slippage_pct=0.05,         # Simulated slippage (% of fill price)
+    default_stock_qty=10,      # Shares per stock signal
+    max_dollar_risk=50.0,      # Max $ risk per options trade
+    max_open_positions=5,      # Concurrent position cap (0 = unlimited)
+)
+
+engine = Engine(config=config)
+result = engine.run(bars, signals)
+```
+
+### How fills work
+
+The simulated broker checks each OHLCV bar against pending orders:
+
+| Order type | Buy fills when | Sell fills when |
+|---|---|---|
+| **Limit** | `bar.low <= limit_price` | `bar.high >= limit_price` |
+| **Stop** | `bar.high >= stop_price` | `bar.low <= stop_price` |
+| **Market** | Immediately at `bar.open` | Immediately at `bar.open` |
+
+**Stock bracket orders** work identically to Alpaca's `BRACKET` class:
+1. Entry limit order fills first
+2. TP and SL legs activate after entry fills
+3. When one exit leg fills, the other is automatically cancelled
+
+**Options orders** use the same exit monitor pattern as the live system: limit entry + monitored TP/SL targets with the 100x options multiplier.
+
+### Metrics
+
+The engine computes standard quantitative trading metrics:
+
+| Metric | Description |
+|---|---|
+| Total / annualised return | Equity growth over the test period |
+| Sharpe ratio | Risk-adjusted return (annualised, 252 trading days) |
+| Sortino ratio | Downside-deviation variant of Sharpe |
+| Calmar ratio | Annualised return / max drawdown |
+| Max drawdown | Largest peak-to-trough equity decline (% and $) |
+| Win rate | Percentage of profitable trades |
+| Profit factor | Gross profit / gross loss |
+| Expectancy | Average P&L per trade |
+| Exposure | Percentage of bars with open positions |
+| Per-strategy breakdown | All trade stats grouped by strategy name |
+
+### Example report output
+
+```
+============================================================
+CRASSUS 2.5 -- BACKTEST REPORT
+============================================================
+Period:           2024-01-02 to 2024-06-28
+Bars processed:   125
+Signals processed:    12
+Signals skipped:       0
+
+------------------------------------------------------------
+RETURNS
+------------------------------------------------------------
+Initial capital:  $    100,000.00
+Final equity:     $    102,450.00
+Total P&L:        $      2,450.00
+Total return:              2.45%
+Annualised return:         5.02%
+
+------------------------------------------------------------
+RISK METRICS
+------------------------------------------------------------
+Sharpe ratio:              1.234
+Sortino ratio:             1.876
+Max drawdown:              1.25%
+
+------------------------------------------------------------
+TRADE STATISTICS
+------------------------------------------------------------
+Total trades:                 12
+Winning trades:                8
+Losing trades:                 4
+Win rate:                  66.7%
+Profit factor:              2.15
+Expectancy:       $        204.17
+
+------------------------------------------------------------
+PER-STRATEGY BREAKDOWN
+------------------------------------------------------------
+  bollinger_mean_reversion
+    Trades:              7
+    Win rate:         71.4%
+    Total P&L:    $ 1,850.00
+
+  lorentzian_classification
+    Trades:              5
+    Win rate:         60.0%
+    Total P&L:    $   600.00
+============================================================
+END OF REPORT
+============================================================
+```
+
+### Programmatic access
+
+All results are available as Python objects for further analysis:
+
+```python
+result = engine.run(bars, signals)
+
+# Equity curve (list of dicts with timestamp, equity, cash, open_positions)
+for point in result.equity_curve:
+    print(point["timestamp"], point["equity"])
+
+# Completed trades
+for trade in result.trades:
+    print(trade.position.ticker, trade.position.pnl, trade.strategy)
+
+# Open positions at end of backtest
+for pos in result.open_positions:
+    print(pos.ticker, pos.entry_price, pos.mode)
+
+# Metrics as a dataclass
+metrics = compute_metrics(result)
+print(f"Sharpe: {metrics.sharpe_ratio:.3f}")
+print(f"Max DD: {metrics.drawdown.max_drawdown_pct:.2f}%")
+for name, sm in metrics.by_strategy.items():
+    print(f"{name}: {sm.win_rate:.1f}% win rate, ${sm.total_pnl:.2f} P&L")
+```
 
 ---
 
