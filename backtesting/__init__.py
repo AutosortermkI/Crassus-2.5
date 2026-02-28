@@ -10,6 +10,8 @@ Supports:
   - Bar-by-bar OHLCV replay with realistic fill simulation
   - Comprehensive performance metrics (Sharpe, drawdown, win rate, etc.)
   - CSV data ingestion for price bars and trade signals
+  - Yahoo Finance historical OHLCV data fetching
+  - Dashboard UI for turnkey backtesting
 
 Reuses existing Crassus modules:
   - strategy.py: StrategyConfig, bracket-price computation
@@ -23,7 +25,15 @@ Quick start::
     bars = load_bars_csv("AAPL_daily.csv")
     signals = load_signals_csv("signals.csv")
     result = Engine(initial_capital=100_000).run(bars, signals)
-    print(result.report())
+    print(generate_report(result))
+
+Or fetch bars directly from Yahoo Finance::
+
+    from backtesting import Engine
+    from backtesting.yahoo_fetch import fetch_bars
+
+    bars = fetch_bars("AAPL", start="2024-01-01", end="2024-06-30")
+    result = Engine().run(bars, signals)
 """
 
 from backtesting.models import (
@@ -38,6 +48,7 @@ from backtesting.models import (
     BacktestResult,
 )
 from backtesting.data import load_bars_csv, load_signals_csv, bars_from_dicts
+from backtesting.yahoo_fetch import fetch_bars
 from backtesting.broker import SimulatedBroker
 from backtesting.engine import Engine
 from backtesting.metrics import compute_metrics, PerformanceMetrics
@@ -56,6 +67,7 @@ __all__ = [
     "load_bars_csv",
     "load_signals_csv",
     "bars_from_dicts",
+    "fetch_bars",
     "SimulatedBroker",
     "Engine",
     "compute_metrics",

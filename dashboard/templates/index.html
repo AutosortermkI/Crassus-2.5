@@ -631,7 +631,127 @@ Time: {{timenow}}</div>
         </div>
     </div>
 
-    <!-- Section 5: Trading Parameters -->
+    <!-- Section 5: Backtesting -->
+    <div class="card">
+        <h2>Backtesting</h2>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px;">
+            <!-- Left column: inputs -->
+            <div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                    <div>
+                        <label style="display:block; font-size:12px; color:#8888aa; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Ticker</label>
+                        <input type="text" id="btTicker" class="config-input" value="AAPL" placeholder="AAPL" style="text-align:left;">
+                    </div>
+                    <div>
+                        <label style="display:block; font-size:12px; color:#8888aa; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Interval</label>
+                        <select id="btInterval" class="config-input" style="text-align:left;">
+                            <option value="1d" selected>Daily</option>
+                            <option value="1h">Hourly</option>
+                            <option value="5m">5 Min</option>
+                            <option value="15m">15 Min</option>
+                            <option value="1wk">Weekly</option>
+                        </select>
+                    </div>
+                </div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px;">
+                    <div>
+                        <label style="display:block; font-size:12px; color:#8888aa; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Start Date</label>
+                        <input type="date" id="btStart" class="config-input" style="text-align:left;">
+                    </div>
+                    <div>
+                        <label style="display:block; font-size:12px; color:#8888aa; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">End Date</label>
+                        <input type="date" id="btEnd" class="config-input" style="text-align:left;">
+                    </div>
+                </div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px;">
+                    <div>
+                        <label style="display:block; font-size:12px; color:#8888aa; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Strategy</label>
+                        <select id="btStrategy" class="config-input" style="text-align:left;">
+                            <option value="bollinger_mean_reversion">Bollinger Mean Reversion</option>
+                            <option value="lorentzian_classification">Lorentzian Classification</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="display:block; font-size:12px; color:#8888aa; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Side</label>
+                        <select id="btSide" class="config-input" style="text-align:left;">
+                            <option value="buy">Buy (Long)</option>
+                            <option value="sell">Sell (Short)</option>
+                        </select>
+                    </div>
+                </div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px;">
+                    <div>
+                        <label style="display:block; font-size:12px; color:#8888aa; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Mode</label>
+                        <select id="btMode" class="config-input" style="text-align:left;">
+                            <option value="stock">Stock</option>
+                            <option value="options">Options</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="display:block; font-size:12px; color:#8888aa; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Signal Frequency</label>
+                        <select id="btFrequency" class="config-input" style="text-align:left;">
+                            <option value="first">First bar only</option>
+                            <option value="weekly">Weekly</option>
+                            <option value="daily">Every bar</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right column: sizing -->
+            <div>
+                <div>
+                    <label style="display:block; font-size:12px; color:#8888aa; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Initial Capital ($)</label>
+                    <input type="number" id="btCapital" class="config-input" value="100000" style="text-align:left;">
+                </div>
+                <div style="margin-top:12px;">
+                    <label style="display:block; font-size:12px; color:#8888aa; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Stock Qty (shares per trade)</label>
+                    <input type="number" id="btQty" class="config-input" value="10" style="text-align:left;">
+                </div>
+                <div style="margin-top:12px;">
+                    <label style="display:block; font-size:12px; color:#8888aa; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Max Dollar Risk (options)</label>
+                    <input type="number" id="btRisk" class="config-input" value="50" style="text-align:left;">
+                </div>
+                <div style="margin-top:12px;">
+                    <label style="display:block; font-size:12px; color:#8888aa; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Slippage (%)</label>
+                    <input type="number" id="btSlippage" class="config-input" value="0" step="0.01" style="text-align:left;">
+                </div>
+                <div style="margin-top:12px;">
+                    <label style="display:block; font-size:12px; color:#8888aa; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Commission ($ per fill)</label>
+                    <input type="number" id="btCommission" class="config-input" value="0" step="0.01" style="text-align:left;">
+                </div>
+            </div>
+        </div>
+
+        <div style="text-align:right; margin-bottom:16px;">
+            <button class="btn btn-primary" id="btRunBtn" onclick="runBacktest()">Run Backtest</button>
+        </div>
+
+        <!-- Results -->
+        <div id="btResults" style="display:none;">
+
+            <!-- Summary metrics -->
+            <div id="btSummaryGrid" class="portfolio-grid" style="margin-bottom:20px;"></div>
+
+            <!-- Equity curve (simple text-based) -->
+            <div id="btEquityCurve" style="margin-bottom:20px;"></div>
+
+            <!-- Trade table -->
+            <div id="btTradeTable"></div>
+
+            <!-- Full report toggle -->
+            <div style="margin-top:16px;">
+                <button class="btn btn-secondary btn-sm" onclick="toggleBtReport()">Toggle Full Report</button>
+            </div>
+            <pre id="btFullReport" style="display:none; background:#1a1a2e; border:1px solid #0f3460; border-radius:6px; padding:16px; font-size:12px; color:#a0a0c0; overflow-x:auto; margin-top:12px; white-space:pre-wrap;"></pre>
+        </div>
+
+        <!-- Error display -->
+        <div id="btError" style="display:none; padding:12px 16px; background:rgba(225,112,85,0.15); border:1px solid #e17055; border-radius:6px; color:#e17055; font-size:13px;"></div>
+    </div>
+
+    <!-- Section 6: Trading Parameters -->
     <div class="card">
         <h2>Trading Parameters</h2>
         <div id="configEditor">
@@ -1082,6 +1202,185 @@ Time: {{timenow}}</div>
             btn.disabled = false;
             btn.textContent = 'Send Test Webhook';
         });
+    }
+
+    // ======================================================================
+    // Backtesting
+    // ======================================================================
+
+    // Set default dates (6 months ago to today)
+    (function() {
+        const today = new Date();
+        const sixMonthsAgo = new Date(today);
+        sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+        document.getElementById('btEnd').value = today.toISOString().split('T')[0];
+        document.getElementById('btStart').value = sixMonthsAgo.toISOString().split('T')[0];
+    })();
+
+    function runBacktest() {
+        const btn = document.getElementById('btRunBtn');
+        const errBox = document.getElementById('btError');
+        const resultsBox = document.getElementById('btResults');
+
+        errBox.style.display = 'none';
+        resultsBox.style.display = 'none';
+
+        const payload = {
+            ticker: document.getElementById('btTicker').value.trim(),
+            start: document.getElementById('btStart').value,
+            end: document.getElementById('btEnd').value,
+            interval: document.getElementById('btInterval').value,
+            strategy: document.getElementById('btStrategy').value,
+            side: document.getElementById('btSide').value,
+            mode: document.getElementById('btMode').value,
+            signal_frequency: document.getElementById('btFrequency').value,
+            initial_capital: parseFloat(document.getElementById('btCapital').value) || 100000,
+            stock_qty: parseInt(document.getElementById('btQty').value) || 10,
+            max_dollar_risk: parseFloat(document.getElementById('btRisk').value) || 50,
+            slippage_pct: parseFloat(document.getElementById('btSlippage').value) || 0,
+            commission: parseFloat(document.getElementById('btCommission').value) || 0,
+        };
+
+        if (!payload.ticker) { showBtError('Ticker is required.'); return; }
+        if (!payload.start) { showBtError('Start date is required.'); return; }
+        if (!payload.end) { showBtError('End date is required.'); return; }
+
+        btn.disabled = true;
+        btn.textContent = 'Running...';
+
+        fetch('/api/backtest/run', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status !== 'ok') {
+                showBtError(data.message || 'Backtest failed.');
+                return;
+            }
+            displayBtResults(data);
+        })
+        .catch(err => {
+            showBtError('Network error: ' + err.message);
+        })
+        .finally(() => {
+            btn.disabled = false;
+            btn.textContent = 'Run Backtest';
+        });
+    }
+
+    function showBtError(msg) {
+        const errBox = document.getElementById('btError');
+        errBox.textContent = msg;
+        errBox.style.display = 'block';
+    }
+
+    function displayBtResults(data) {
+        const s = data.summary;
+        const resultsBox = document.getElementById('btResults');
+        resultsBox.style.display = 'block';
+
+        // Summary grid
+        const returnClass = s.total_return_pct >= 0 ? 'positive' : 'negative';
+        const pnlClass = s.total_pnl >= 0 ? 'positive' : 'negative';
+
+        document.getElementById('btSummaryGrid').innerHTML = `
+            <div class="stat-box">
+                <div class="label">Final Equity</div>
+                <div class="value">${fmtDollar(s.final_equity)}</div>
+            </div>
+            <div class="stat-box">
+                <div class="label">Total Return</div>
+                <div class="value ${returnClass}">${s.total_return_pct}%</div>
+            </div>
+            <div class="stat-box">
+                <div class="label">Total P&L</div>
+                <div class="value ${pnlClass}">${fmtDollar(s.total_pnl)}</div>
+            </div>
+            <div class="stat-box">
+                <div class="label">Sharpe Ratio</div>
+                <div class="value">${s.sharpe_ratio}</div>
+            </div>
+            <div class="stat-box">
+                <div class="label">Max Drawdown</div>
+                <div class="value negative">${s.max_drawdown_pct}%</div>
+            </div>
+            <div class="stat-box">
+                <div class="label">Win Rate</div>
+                <div class="value">${s.win_rate}%</div>
+            </div>
+            <div class="stat-box">
+                <div class="label">Profit Factor</div>
+                <div class="value">${s.profit_factor}</div>
+            </div>
+            <div class="stat-box">
+                <div class="label">Total Trades</div>
+                <div class="value">${s.total_trades}</div>
+            </div>
+        `;
+
+        // Equity curve as a simple visual bar
+        if (data.equity_curve && data.equity_curve.length > 1) {
+            const eqs = data.equity_curve.map(p => p.equity);
+            const minEq = Math.min(...eqs);
+            const maxEq = Math.max(...eqs);
+            const range = maxEq - minEq || 1;
+            const barCount = Math.min(data.equity_curve.length, 80);
+            const step = Math.max(1, Math.floor(data.equity_curve.length / barCount));
+
+            let sparkHtml = '<div style="font-size:12px; color:#8888aa; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px;">Equity Curve</div>';
+            sparkHtml += '<div style="display:flex; align-items:flex-end; height:60px; gap:1px; background:#1a1a2e; border-radius:4px; padding:4px;">';
+            for (let i = 0; i < data.equity_curve.length; i += step) {
+                const eq = data.equity_curve[i].equity;
+                const pct = ((eq - minEq) / range) * 100;
+                const h = Math.max(2, pct * 0.56);
+                const color = eq >= s.initial_capital ? '#00b894' : '#e17055';
+                sparkHtml += `<div style="flex:1; height:${h}px; background:${color}; border-radius:1px;" title="${data.equity_curve[i].timestamp}: $${eq.toFixed(2)}"></div>`;
+            }
+            sparkHtml += '</div>';
+            sparkHtml += `<div style="display:flex; justify-content:space-between; font-size:11px; color:#8888aa; margin-top:4px;">
+                <span>${fmtDollar(minEq)}</span><span>${fmtDollar(maxEq)}</span>
+            </div>`;
+            document.getElementById('btEquityCurve').innerHTML = sparkHtml;
+        } else {
+            document.getElementById('btEquityCurve').innerHTML = '';
+        }
+
+        // Trade table
+        if (data.trades && data.trades.length > 0) {
+            let html = '<table><thead><tr>';
+            html += '<th>Ticker</th><th>Side</th><th>Qty</th><th>Entry</th><th>Exit</th><th>P&L</th><th>P&L %</th><th>Type</th><th>Strategy</th>';
+            html += '</tr></thead><tbody>';
+            for (const t of data.trades) {
+                const pc = t.pnl !== null ? plClass(t.pnl) : '';
+                const exitType = t.exit_type === 'tp' ? '<span style="color:#00b894;">TP</span>' : '<span style="color:#e17055;">SL</span>';
+                html += `<tr>
+                    <td>${t.ticker}</td>
+                    <td>${t.side}</td>
+                    <td>${t.qty}</td>
+                    <td>$${t.entry_price}</td>
+                    <td>${t.exit_price !== null ? '$' + t.exit_price : '-'}</td>
+                    <td class="${pc}">${t.pnl !== null ? fmtDollar(t.pnl) : '-'}</td>
+                    <td class="${pc}">${t.pnl_pct !== null ? t.pnl_pct + '%' : '-'}</td>
+                    <td>${exitType}</td>
+                    <td style="font-size:12px; color:#8888aa;">${t.strategy}</td>
+                </tr>`;
+            }
+            html += '</tbody></table>';
+            document.getElementById('btTradeTable').innerHTML = html;
+        } else {
+            document.getElementById('btTradeTable').innerHTML = '<div class="empty-state">No trades executed. Try a different date range or signal frequency.</div>';
+        }
+
+        // Full report
+        document.getElementById('btFullReport').textContent = data.report || '';
+        document.getElementById('btFullReport').style.display = 'none';
+    }
+
+    function toggleBtReport() {
+        const el = document.getElementById('btFullReport');
+        el.style.display = el.style.display === 'none' ? 'block' : 'none';
     }
 
     // ======================================================================
