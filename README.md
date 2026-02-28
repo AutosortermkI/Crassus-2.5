@@ -23,7 +23,7 @@ That's it. The script auto-creates a virtual environment, installs all dependenc
 | `./setup.sh` | Full interactive setup (venv, deps, credential prompts, `.env` generation) |
 | `./run_dashboard.sh` | Launch the dashboard GUI (auto-installs deps if needed) |
 | `./run_crassus.sh` | Run the Azure Function locally (`http://localhost:7071/api/trade`) |
-| `./run_tests.sh` | Run the test suite (210 unit tests) |
+| `./run_tests.sh` | Run the test suite (229 unit tests) |
 | `./deploy_azure.sh` | Deploy to Azure (creates resource group, storage, Function App, pushes code) |
 
 All scripts have `.bat` equivalents for Windows.
@@ -143,7 +143,8 @@ backtesting/
 ├── broker.py                # Simulated order execution, bracket lifecycle, cash accounting
 ├── engine.py                # Bar-by-bar replay engine with strategy integration
 ├── metrics.py               # Sharpe, Sortino, Calmar, drawdown, win rate, profit factor
-└── report.py                # Human-readable text report generation
+├── report.py                # Human-readable text report generation
+└── yahoo_fetch.py           # Yahoo Finance historical OHLCV data fetcher
 
 tests/
 ├── conftest.py              # Adds function_app/ and project root to sys.path
@@ -158,7 +159,8 @@ tests/
 ├── test_backtest_broker.py  # 17 tests: fills, brackets, cash, slippage, mark-to-market
 ├── test_backtest_engine.py  # 12 tests: end-to-end runs, stock/options, position limits
 ├── test_backtest_metrics.py # 17 tests: returns, drawdown, Sharpe, strategy breakdown
-└── test_backtest_report.py  # 5 tests:  report content, formatting, edge cases
+├── test_backtest_report.py  # 5 tests:  report content, formatting, edge cases
+└── test_backtest_yahoo_fetch.py # 19 tests: Yahoo chart API, parsing, validation
 
 deploy_azure.sh / .bat       # One-command Azure deployment
 setup.sh / .bat              # Interactive first-time setup
@@ -226,14 +228,19 @@ All percentages are configurable via environment variables or the dashboard UI.
 
 The backtesting engine replays historical price data through the **exact same strategy logic** used in live trading — same `get_strategy()` lookup, same `compute_stock_bracket_prices()` math, same `compute_options_exit_prices()` targets, same `compute_options_qty()` risk sizing. The only difference is that orders go to a simulated broker instead of Alpaca.
 
-### Quick start
+### Dashboard (no code needed)
+
+The dashboard at `http://localhost:5050` includes a **Backtesting** section. Pick a ticker, date range, strategy, and click **Run Backtest**. The system automatically fetches historical bars from Yahoo Finance, generates signals, runs the backtest, and displays results with an equity curve, key metrics, and a trade-by-trade table — all in the browser.
+
+### Quick start (Python)
 
 ```python
-from backtesting import Engine, load_bars_csv, load_signals_csv, generate_report
+from backtesting import Engine, generate_report
+from backtesting.yahoo_fetch import fetch_bars
 from backtesting.metrics import compute_metrics
 
-# Load historical data
-bars = load_bars_csv("data/AAPL_daily.csv", ticker="AAPL")
+# Fetch historical bars directly from Yahoo Finance
+bars = fetch_bars("AAPL", start="2024-01-01", end="2024-06-30", interval="1d")
 signals = load_signals_csv("data/signals.csv")
 
 # Run backtest
@@ -243,6 +250,36 @@ result = Engine(initial_capital=100_000, default_stock_qty=10).run(bars, signals
 metrics = compute_metrics(result)
 print(generate_report(result, metrics))
 ```
+
+Or load bars from a CSV file instead:
+
+```python
+from backtesting import Engine, load_bars_csv, load_signals_csv, generate_report
+
+bars = load_bars_csv("data/AAPL_daily.csv", ticker="AAPL")
+signals = load_signals_csv("data/signals.csv")
+result = Engine(initial_capital=100_000).run(bars, signals)
+print(generate_report(result))
+```
+
+### Yahoo Finance data fetcher
+
+`fetch_bars()` downloads historical OHLCV data directly from Yahoo Finance with no API key required:
+
+```python
+from backtesting.yahoo_fetch import fetch_bars
+
+# Daily bars
+bars = fetch_bars("AAPL", start="2024-01-01", end="2024-06-30", interval="1d")
+
+# Intraday (5-minute bars)
+bars = fetch_bars("TSLA", start="2024-06-01", end="2024-06-07", interval="5m")
+
+# Weekly
+bars = fetch_bars("SPY", start="2023-01-01", end="2024-01-01", interval="1wk")
+```
+
+Supported intervals: `1m`, `2m`, `5m`, `15m`, `30m`, `60m`, `90m`, `1h`, `1d`, `5d`, `1wk`, `1mo`, `3mo`.
 
 ### CSV formats
 
