@@ -13,10 +13,8 @@ Supports:
   - Yahoo Finance historical OHLCV data fetching
   - Dashboard UI for turnkey backtesting
 
-Reuses existing Crassus modules:
-  - strategy.py: StrategyConfig, bracket-price computation
-  - risk.py: Position sizing
-  - greeks.py: Black-Scholes Greeks (for options premium estimation)
+Self-contained strategy and risk modules (no dependency on function_app/):
+  - backtesting.strategy: StrategyConfig, bracket-price computation, risk sizing
 
 Quick start::
 
@@ -53,6 +51,15 @@ from backtesting.broker import SimulatedBroker
 from backtesting.engine import Engine
 from backtesting.metrics import compute_metrics, PerformanceMetrics
 from backtesting.report import generate_report
+from backtesting.strategy import (
+    StrategyConfig,
+    UnknownStrategyError,
+    STRATEGY_REGISTRY,
+    get_strategy,
+    compute_stock_bracket_prices,
+    compute_options_exit_prices,
+    compute_options_qty,
+)
 
 __all__ = [
     "Bar",
@@ -73,4 +80,11 @@ __all__ = [
     "compute_metrics",
     "PerformanceMetrics",
     "generate_report",
+    "StrategyConfig",
+    "UnknownStrategyError",
+    "STRATEGY_REGISTRY",
+    "get_strategy",
+    "compute_stock_bracket_prices",
+    "compute_options_exit_prices",
+    "compute_options_qty",
 ]

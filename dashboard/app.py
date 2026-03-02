@@ -262,7 +262,7 @@ def api_webhook_test():
 def api_backtest_strategies():
     """Return available strategies for the backtest dropdown."""
     try:
-        from strategy import STRATEGY_REGISTRY
+        from backtesting.strategy import STRATEGY_REGISTRY
         strategies = []
         for name, cfg in sorted(STRATEGY_REGISTRY.items()):
             strategies.append({
