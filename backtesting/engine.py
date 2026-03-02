@@ -2,7 +2,9 @@
 Crassus 2.5 -- Backtesting engine.
 
 Orchestrates the bar-by-bar replay of historical data through the
-simulated broker, reusing the same strategy logic as the live system.
+simulated broker using the same strategy logic as the live system.
+All strategy and risk computation is self-contained within the
+backtesting package (no imports from function_app/).
 
 Usage::
 
@@ -39,15 +41,15 @@ from backtesting.models import (
 from backtesting.broker import SimulatedBroker
 from backtesting.metrics import compute_metrics
 
-# Import existing Crassus strategy logic
-from strategy import (
+# Strategy and risk logic -- self-contained within the backtesting package
+from backtesting.strategy import (
     get_strategy,
     compute_stock_bracket_prices,
     compute_options_exit_prices,
+    compute_options_qty,
     StrategyConfig,
     UnknownStrategyError,
 )
-from risk import compute_options_qty
 
 logger = logging.getLogger(__name__)
 
