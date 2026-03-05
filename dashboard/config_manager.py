@@ -6,8 +6,13 @@ for the dashboard UI.
 """
 
 import os
+import shutil
+import subprocess
+import logging
 from pathlib import Path
 from collections import OrderedDict
+
+logger = logging.getLogger(__name__)
 
 # Path to the .env file (repo root)
 ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
@@ -326,3 +331,61 @@ def save_config(updates: dict) -> None:
 
     with open(ENV_PATH, "w") as f:
         f.writelines(new_lines)
+
+
+# ---------------------------------------------------------------------------
+# Azure Function App settings sync
+# ---------------------------------------------------------------------------
+
+# Azure resource identifiers (must match deploy_azure.sh / deploy_azure.bat)
+AZURE_FUNCTION_APP_NAME = "crassus-25"
+AZURE_RESOURCE_GROUP = "CRG"
+
+
+def azure_cli_available() -> bool:
+    """Return True if the ``az`` CLI is installed."""
+    return shutil.which("az") is not None
+
+
+def sync_settings_to_azure(updates: dict) -> dict:
+    """Push config key=value pairs to the Azure Function App.
+
+    Uses ``az functionapp config appsettings set`` to update the live
+    environment variables on the deployed Function App so the dashboard
+    and Azure stay in sync.
+
+    Returns ``{"ok": True}`` on success or ``{"ok": False, "error": ...}``
+    on failure.
+    """
+    if not azure_cli_available():
+        return {"ok": False, "error": "Azure CLI (az) is not installed."}
+
+    if not updates:
+        return {"ok": True}
+
+    # Build the settings list: KEY1=VALUE1 KEY2=VALUE2 ...
+    settings_args = [f"{k}={v}" for k, v in updates.items()]
+
+    cmd = [
+        "az", "functionapp", "config", "appsettings", "set",
+        "--name", AZURE_FUNCTION_APP_NAME,
+        "--resource-group", AZURE_RESOURCE_GROUP,
+        "--settings",
+    ] + settings_args + ["--output", "none"]
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            error_msg = result.stderr.strip() or f"az exited with code {result.returncode}"
+            logger.warning("Azure sync failed: %s", error_msg)
+            return {"ok": False, "error": error_msg}
+        return {"ok": True}
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": "Azure CLI command timed out."}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
