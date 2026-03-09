@@ -9,7 +9,7 @@
 
 Crassus 2.5 is a well-architected algorithmic trading system that receives TradingView webhook alerts and places bracket orders (stocks) and risk-sized options orders on Alpaca. The project is functional and well-tested, with **229 of 229 unit tests passing** (excluding the live integration test). The backtesting engine runs end-to-end successfully, and the dashboard Flask app loads correctly with all routes registered.
 
-**Overall verdict: Production-ready for single-instance deployment with minor issues to address.**
+**Overall verdict: Functional and well-tested core, with security and concurrency issues to address before production deployment.**
 
 ---
 
@@ -94,7 +94,68 @@ if isinstance(initial_capital, BacktestConfig):
     initial_capital = 100_000.0
 ```
 
-### Issue 3: No `pyproject.toml` or `pytest.ini` (Low)
+### Issue 3: Timing attack on webhook authentication (High)
+
+**File:** `function_app/function_app.py:80`
+
+```python
+if not token or token != WEBHOOK_AUTH_TOKEN:
+```
+
+Uses standard string comparison (`!=`), which is susceptible to timing attacks. An attacker can determine the correct token one character at a time by measuring response latency.
+
+**Fix:** Use `hmac.compare_digest(token, WEBHOOK_AUTH_TOKEN)` for constant-time comparison.
+
+### Issue 4: Race condition in exit monitor JSON storage (High)
+
+**File:** `function_app/exit_monitor.py:53-67`
+
+`_load_targets()` and `_save_targets()` have no file locking. Even on a single Azure Functions instance, concurrent executions (HTTP trigger + timer trigger) can read/write the same file simultaneously, causing data loss or corruption. Additionally, each `remove_exit_target()` call does a full load-save cycle, so a loop with N exits performs N file I/O cycles that can race.
+
+**Fix:** Use `fcntl.flock()` or `filelock` for file-level locking, or migrate to Azure Table Storage.
+
+### Issue 5: NaN check bug in options screener (Medium)
+
+**File:** `function_app/options_screener.py:289,309,484,501`
+
+```python
+if iv and iv == iv:  # Check for NaN
+```
+
+The `iv and ...` short-circuits when `iv` is `0.0` (falsy), treating zero IV as NaN. Contracts with unknown delta then bypass the delta filter entirely, potentially letting very deep ITM/OTM contracts through.
+
+**Fix:** Use `import math; if not math.isnan(iv)` or `if iv is not None and iv == iv`.
+
+### Issue 6: Dashboard has no authentication or CSRF protection (Medium)
+
+**File:** `dashboard/app.py`
+
+- No login or session authentication -- anyone with network access to port 5050 can view credentials, modify config, and submit test orders.
+- No CSRF tokens on POST endpoints (`/api/credentials/save`, `/api/config`, `/api/webhook/token`).
+- Auth token exposed via GET at `/api/webhook/info`.
+- Minor XSS risk: error messages inserted via `innerHTML` in the template JS (line ~703).
+
+Mitigated by localhost-only binding, but any local process or browser tab could exploit this.
+
+### Issue 7: No maximum cap on options quantity (Medium)
+
+**File:** `function_app/risk.py`
+
+If `max_dollar_risk` is very large or `stop_distance` is very small, the computed quantity could be enormous. There is no upper bound check. Similarly, `compute_stock_qty()` returns a static env-var value with no relationship to stop-loss distance or account equity.
+
+### Issue 8: Strategy registry not reloaded on config change (Medium)
+
+**File:** `function_app/strategy.py:98`
+
+`STRATEGY_REGISTRY` is built once at module import. Changing strategy percentages via the dashboard's `.env` editor won't take effect until the Azure Function cold-starts. In contrast, `get_screening_criteria()` reads env vars on every call. This inconsistency means some settings update live and others don't.
+
+### Issue 9: Potential duplicate options exit orders (Low)
+
+**File:** `function_app/exit_monitor.py:159-208`
+
+If `client.submit_order()` succeeds but `remove_exit_target()` fails (file I/O error), the next timer tick will see the position still tracked and submit another exit order.
+
+### Issue 10: No `pyproject.toml` or `pytest.ini` (Low)
 
 The project has no pytest configuration file. This means:
 - No default test discovery paths configured
@@ -102,31 +163,17 @@ The project has no pytest configuration file. This means:
 - No default exclusion patterns
 - No minimum Python version specified
 
-### Issue 4: Exit monitor uses file-based persistence (Acknowledged)
-
-**File:** `function_app/exit_monitor.py:29`
-
-Options exit targets are stored in a JSON file (`.options_targets.json`). The code already acknowledges this in comments:
-
-> "For multi-instance scaling, swap for Azure Table Storage or Cosmos DB."
-
-This is fine for single-instance Azure Functions but would cause data loss or race conditions with multiple instances. Not a bug, but worth tracking as a scaling limitation.
-
-### Issue 5: Module-level Alpaca client initialization (Low)
+### Issue 11: Module-level Alpaca client initialization (Low)
 
 **File:** `function_app/function_app.py:60`
 
-```python
-trading_client = TradingClient(ALPACA_API_KEY, ALPACA_SECRET_KEY, paper=ALPACA_PAPER)
-```
+The Alpaca client is initialized at module import time with potentially empty env vars. Standard Azure Functions practice, but produces confusing errors when credentials are missing.
 
-The Alpaca client is initialized at module import time. If env vars are missing or invalid, the client is created with empty credentials. It won't fail until the first API call, which could produce confusing error messages. This is standard practice for Azure Functions (cold start optimization), but worth noting.
+### Issue 12: Version mismatch in docstrings (Cosmetic)
 
-### Issue 6: Version mismatch in docstrings (Cosmetic)
-
-Several files reference "Crassus 2.0" in their docstrings while the project is "Crassus 2.5":
-- `function_app/function_app.py:1` -- "Crassus 2.0"
-- `function_app/options_screener.py:1` -- "Crassus 2.0"
+Several files reference "Crassus 2.0" instead of "Crassus 2.5":
+- `function_app/function_app.py:1`
+- `function_app/options_screener.py:1`
 
 ---
 
@@ -171,13 +218,23 @@ Several files reference "Crassus 2.0" in their docstrings while the project is "
 | Risk sizing | Excellent | 9 tests, proper edge case handling |
 | Black-Scholes Greeks | Excellent | 47 tests, most comprehensive module |
 | Yahoo Finance client | Excellent | 26 tests, retry logic, error handling |
-| Options screener | Good | No unit tests, but complex logic is well-structured |
-| Stock orders | Good | Straightforward Alpaca wrapper |
+| Options screener | Fair | NaN/zero IV bug, no unit tests |
+| Stock orders | Good | Straightforward Alpaca wrapper, minor validation gap |
 | Options orders | Good | Straightforward Alpaca wrapper |
-| Exit monitor | Fair | No unit tests, file-based persistence |
-| Dashboard | Fair | Works correctly but untested |
+| Exit monitor | Poor | Race condition, no locking, no unit tests, duplicate order risk |
+| Dashboard | Poor | No auth, no CSRF, no tests, XSS risk |
 | Backtesting engine | Excellent | 86 tests across 6 test files, end-to-end verified |
 | Deployment scripts | Good | Azure deployment automated |
+
+---
+
+## Issue Severity Summary
+
+| Severity | Count | Key Items |
+|----------|-------|-----------|
+| High | 2 | Timing attack on auth token, race condition in exit target storage |
+| Medium | 4 | NaN/zero IV screening bug, no dashboard auth/CSRF, no qty cap, strategy reload inconsistency |
+| Low | 6 | Engine API footgun, duplicate exit orders, test collection breakage, no pytest config, module-level client init, docstring versioning |
 
 ---
 
@@ -185,4 +242,9 @@ Several files reference "Crassus 2.0" in their docstrings while the project is "
 
 Crassus 2.5 is a well-built trading system with strong fundamentals. The core trading logic (parsing, strategy computation, risk sizing, Greeks) is thoroughly tested and functionally correct. The backtesting engine independently replicates live trading logic and produces accurate results.
 
-The main gaps are in test coverage for peripheral components (dashboard, exit monitor, options screener) and the absence of CI/CD and type checking infrastructure. None of the issues found are blockers for deployment -- the system is functionally sound for its intended single-instance Azure Functions use case.
+**Before production deployment, address:**
+1. The timing attack vulnerability on webhook authentication (use `hmac.compare_digest`)
+2. The race condition in exit monitor file storage (add locking or migrate to database)
+3. The NaN/zero IV screening bug (use `math.isnan` instead of truthiness check)
+
+The remaining issues (dashboard security, qty caps, test infrastructure) are important for hardening but do not affect core trading correctness.
