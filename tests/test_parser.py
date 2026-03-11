@@ -2,7 +2,7 @@
 Tests for the webhook content parser.
 """
 import pytest
-from parser import parse_webhook_content, ParseError, ParsedSignal
+from parser import parse_webhook_content, parse_webhook_payload, ParseError, ParsedSignal
 
 
 # ---------------------------------------------------------------------------
@@ -233,3 +233,52 @@ class TestExamplePayloads:
         assert sig.mode == expected_mode
         assert sig.price > 0
         assert len(sig.ticker) >= 2
+
+
+class TestStructuredJsonPayloads:
+    def test_parses_direct_json_buy(self):
+        sig = parse_webhook_payload({
+            "ticker": "AAPL",
+            "side": "buy",
+            "strategy": "bollinger_mean_reversion",
+            "mode": "stock",
+            "price": 189.5,
+            "volume": 2500000,
+            "time": "2024-06-15T14:30:00Z",
+        })
+        assert sig == ParsedSignal(
+            ticker="AAPL",
+            side="buy",
+            strategy="bollinger_mean_reversion",
+            mode="stock",
+            price=189.5,
+            volume=2500000.0,
+            time="2024-06-15T14:30:00Z",
+        )
+
+    def test_parses_symbol_and_close_aliases(self):
+        sig = parse_webhook_payload({
+            "symbol": "tsla",
+            "action": "sell",
+            "strategy": "lorentzian_classification",
+            "mode": "options",
+            "close": "245.50",
+        })
+        assert sig.ticker == "TSLA"
+        assert sig.side == "sell"
+        assert sig.mode == "options"
+        assert sig.price == pytest.approx(245.5)
+
+    def test_prefers_content_when_present(self):
+        sig = parse_webhook_payload(EXAMPLE_OPTIONS_BUY)
+        assert sig.ticker == "SPY"
+        assert sig.side == "buy"
+        assert sig.mode == "options"
+
+    def test_rejects_missing_side(self):
+        with pytest.raises(ParseError, match="Missing side"):
+            parse_webhook_payload({
+                "ticker": "AAPL",
+                "strategy": "bollinger_mean_reversion",
+                "price": 100,
+            })

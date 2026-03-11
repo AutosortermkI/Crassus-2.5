@@ -22,7 +22,7 @@ import azure.functions as func
 from alpaca.trading.client import TradingClient
 from alpaca.common.exceptions import APIError
 
-from parser import parse_webhook_content, ParseError
+from parser import parse_webhook_payload, ParseError
 from strategy import (
     get_strategy,
     compute_stock_bracket_prices,
@@ -43,6 +43,11 @@ from utils import (
     get_logger,
     round_stock_price,
     round_options_price,
+)
+from webhook_activity import (
+    build_signature,
+    get_webhook_activity_snapshot,
+    record_webhook_event,
 )
 
 logger = get_logger(__name__)
@@ -90,16 +95,15 @@ def trade(req: func.HttpRequest) -> func.HttpResponse:
         log_structured(logger, logging.WARNING, "Invalid JSON body", correlation_id)
         return _json_response({"error": "Invalid JSON", "correlation_id": correlation_id}, 400)
 
-    content = data.get("content", "")
-    if not content:
-        log_structured(logger, logging.WARNING, "Missing content field", correlation_id)
-        return _json_response({"error": "Missing 'content' field", "correlation_id": correlation_id}, 400)
+    signal = None
 
     try:
-        signal = parse_webhook_content(content)
+        signal = parse_webhook_payload(data)
     except ParseError as e:
         log_structured(logger, logging.WARNING, f"Parse error: {e}", correlation_id)
-        return _json_response({"error": str(e), "correlation_id": correlation_id}, 400)
+        response = _json_response({"error": str(e), "correlation_id": correlation_id}, 400)
+        _record_activity(data, correlation_id, response, signal=None, parse_error=str(e))
+        return response
 
     log_structured(
         logger, logging.INFO, "Signal parsed", correlation_id,
@@ -114,41 +118,74 @@ def trade(req: func.HttpRequest) -> func.HttpResponse:
         strategy_config = get_strategy(signal.strategy)
     except UnknownStrategyError as e:
         log_structured(logger, logging.WARNING, f"Unknown strategy: {e}", correlation_id)
-        return _json_response({"error": str(e), "correlation_id": correlation_id}, 400)
+        response = _json_response({"error": str(e), "correlation_id": correlation_id}, 400)
+        _record_activity(data, correlation_id, response, signal=signal, parse_error=str(e))
+        return response
 
     # ----------------------------------------------------------------
     # 4. Route: stock or options
     # ----------------------------------------------------------------
     try:
         if signal.mode == "stock":
-            return _handle_stock_order(signal, strategy_config, correlation_id)
+            response = _handle_stock_order(signal, strategy_config, correlation_id)
         elif signal.mode == "options":
-            return _handle_options_order(signal, strategy_config, correlation_id)
+            response = _handle_options_order(signal, strategy_config, correlation_id)
         else:
-            return _json_response(
+            response = _json_response(
                 {"error": f"Unsupported mode: {signal.mode}", "correlation_id": correlation_id},
                 400,
             )
+        _record_activity(data, correlation_id, response, signal=signal)
+        return response
 
     except APIError as e:
         log_structured(
             logger, logging.ERROR, f"Alpaca API error: {e}", correlation_id,
             symbol=signal.ticker, mode=signal.mode,
         )
-        return _json_response(
+        response = _json_response(
             {"error": f"Alpaca API error: {str(e)}", "correlation_id": correlation_id},
             502,
         )
+        _record_activity(data, correlation_id, response, signal=signal, parse_error=str(e))
+        return response
 
     except Exception as e:
         log_structured(
             logger, logging.ERROR, f"Internal error: {e}", correlation_id,
             symbol=signal.ticker, mode=signal.mode,
         )
-        return _json_response(
+        response = _json_response(
             {"error": f"Internal error: {str(e)}", "correlation_id": correlation_id},
             500,
         )
+        _record_activity(data, correlation_id, response, signal=signal, parse_error=str(e))
+        return response
+
+
+@app.route(route="webhook-activity", methods=["GET"])
+def webhook_activity(req: func.HttpRequest) -> func.HttpResponse:
+    """Return recent webhook snapshots and the active-webhook rollup."""
+    correlation_id = generate_correlation_id()
+    token = req.headers.get("X-Webhook-Token", "") or req.params.get("token", "")
+    if not token or token != WEBHOOK_AUTH_TOKEN:
+        return _json_response({"error": "Unauthorized", "correlation_id": correlation_id}, 401)
+
+    try:
+        active_minutes = int(req.params.get("active_minutes", "60"))
+    except ValueError:
+        active_minutes = 60
+    try:
+        recent_limit = int(req.params.get("limit", "20"))
+    except ValueError:
+        recent_limit = 20
+
+    snapshot = get_webhook_activity_snapshot(
+        active_minutes=max(1, active_minutes),
+        recent_limit=max(1, recent_limit),
+    )
+    snapshot["correlation_id"] = correlation_id
+    return _json_response(snapshot, 200)
 
 
 # ======================================================================
@@ -315,6 +352,49 @@ def _handle_options_order(signal, strategy_config, correlation_id: str) -> func.
 # ======================================================================
 # Helpers
 # ======================================================================
+
+def _record_activity(
+    payload: dict,
+    correlation_id: str,
+    response: func.HttpResponse,
+    signal=None,
+    parse_error: str | None = None,
+) -> None:
+    """Persist a webhook snapshot for the Azure-centric dashboard."""
+    try:
+        body = json.loads(response.get_body())
+    except Exception:
+        body = {"raw_body": response.get_body().decode("utf-8", errors="replace")}
+
+    parsed = None
+    if signal is not None:
+        parsed = {
+            "ticker": signal.ticker,
+            "side": signal.side,
+            "strategy": signal.strategy,
+            "price": signal.price,
+            "mode": signal.mode,
+            "volume": signal.volume,
+            "time": signal.time,
+        }
+
+    event = {
+        "id": correlation_id,
+        "received_at": datetime.now(timezone.utc).isoformat(),
+        "payload": payload,
+        "parsed": parsed,
+        "parse_error": parse_error,
+        "execution": {
+            "ok": response.status_code < 400,
+            "status_code": response.status_code,
+            "body": body,
+            "message": "executed" if response.status_code < 400 else body.get("error", "error"),
+        },
+        "signature": build_signature(parsed),
+    }
+    record_webhook_event(event)
+    log_structured(logger, logging.INFO, "Webhook activity recorded", correlation_id)
+    return None
 
 def _json_response(body: dict, status_code: int) -> func.HttpResponse:
     """Return an ``HttpResponse`` with JSON content type."""

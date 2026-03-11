@@ -145,6 +145,61 @@ def parse_webhook_content(content: str) -> ParsedSignal:
     )
 
 
+def parse_webhook_payload(payload: dict) -> ParsedSignal:
+    """Parse either the legacy ``content`` payload or direct JSON fields."""
+    if not isinstance(payload, dict):
+        raise ParseError("Webhook payload must be a JSON object")
+
+    content = payload.get("content")
+    if isinstance(content, str) and content.strip():
+        return parse_webhook_content(content)
+
+    side = _normalize_side(
+        payload.get("side")
+        or payload.get("signal")
+        or payload.get("action")
+    )
+    if not side:
+        raise ParseError("Missing side: expected 'side', 'signal', or 'action'")
+
+    ticker = _normalize_ticker(payload.get("ticker") or payload.get("symbol"))
+    if not ticker:
+        raise ParseError("Missing ticker: expected 'ticker' or 'symbol'")
+
+    strategy = str(payload.get("strategy") or "").strip().lower()
+    if not strategy:
+        raise ParseError("Missing strategy: expected 'strategy'")
+
+    price_value = payload.get("price", payload.get("close"))
+    try:
+        price = float(price_value)
+    except (TypeError, ValueError):
+        raise ParseError("Missing or invalid price: expected 'price' or 'close'")
+
+    mode = _normalize_mode(payload.get("mode") or "stock")
+
+    volume = None
+    if payload.get("volume") is not None:
+        try:
+            volume = float(payload.get("volume"))
+        except (TypeError, ValueError):
+            volume = None
+
+    time_str = None
+    if payload.get("time") is not None:
+        time_str = str(payload.get("time")).strip()
+
+    return ParsedSignal(
+        ticker=ticker,
+        side=side,
+        strategy=strategy,
+        price=price,
+        mode=mode,
+        volume=volume,
+        time=time_str,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Internals
 # ---------------------------------------------------------------------------
@@ -181,3 +236,30 @@ def _extract_ticker(content: str) -> Optional[str]:
     # Fallback: first uppercase word in content
     fallback = re.search(r"\b([A-Z]{1,5})\b", content)
     return fallback.group(1) if fallback else None
+
+
+def _normalize_side(value) -> Optional[str]:
+    if value is None:
+        return None
+    lower = str(value).strip().lower()
+    if lower in {"buy", "long"}:
+        return "buy"
+    if lower in {"sell", "short"}:
+        return "sell"
+    return None
+
+
+def _normalize_ticker(value) -> Optional[str]:
+    if value is None:
+        return None
+    ticker = str(value).strip().upper()
+    if not ticker:
+        return None
+    return ticker
+
+
+def _normalize_mode(value) -> str:
+    mode = str(value).strip().lower()
+    if mode not in ("stock", "options"):
+        raise ParseError(f"Invalid mode '{mode}': expected 'stock' or 'options'")
+    return mode

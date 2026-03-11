@@ -7,181 +7,511 @@
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
+        :root {
+            --bg: #0f1728;
+            --panel: #16213e;
+            --panel-soft: #1a1f34;
+            --border: #24436d;
+            --text: #ebf2ff;
+            --muted: #8da1c7;
+            --green: #2dd4bf;
+            --red: #fb7185;
+            --yellow: #fbbf24;
+            --blue: #60a5fa;
+        }
+
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: #1a1a2e;
-            color: #e0e0e0;
-            line-height: 1.6;
+            background:
+                radial-gradient(circle at top right, rgba(96, 165, 250, 0.12), transparent 30%),
+                radial-gradient(circle at top left, rgba(45, 212, 191, 0.10), transparent 30%),
+                var(--bg);
+            color: var(--text);
+            line-height: 1.5;
         }
 
-        /* Header */
+        .hidden { display: none !important; }
+
         .header {
-            background: #16213e;
-            padding: 16px 32px;
+            background: rgba(22, 33, 62, 0.88);
+            backdrop-filter: blur(14px);
+            padding: 18px 32px;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            border-bottom: 1px solid #0f3460;
+            border-bottom: 1px solid var(--border);
+            position: sticky;
+            top: 0;
+            z-index: 10;
         }
+
         .header h1 {
             font-size: 22px;
-            color: #fff;
+            letter-spacing: 0.02em;
         }
+
         .badge {
-            padding: 6px 16px;
-            border-radius: 4px;
+            padding: 7px 14px;
+            border-radius: 999px;
+            font-size: 12px;
             font-weight: 700;
-            font-size: 13px;
-            letter-spacing: 1px;
-        }
-        .badge-paper {
-            background: #00b894;
-            color: #1a1a2e;
-        }
-        .badge-live {
-            background: #e17055;
-            color: #fff;
-        }
-
-        /* Layout */
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 24px;
-        }
-
-        /* Cards */
-        .card {
-            background: #16213e;
-            border-radius: 8px;
-            padding: 24px;
-            margin-bottom: 24px;
-            border: 1px solid #0f3460;
-        }
-        .card h2 {
-            font-size: 16px;
-            color: #a0a0c0;
+            letter-spacing: 0.08em;
             text-transform: uppercase;
-            letter-spacing: 1px;
-            margin-bottom: 16px;
+            border: 1px solid transparent;
+        }
+
+        .badge-paper {
+            color: #041d18;
+            background: var(--green);
+        }
+
+        .badge-live {
+            color: #fff;
+            background: #d9485f;
+        }
+
+        .badge-neutral {
+            color: var(--text);
+            background: rgba(96, 165, 250, 0.18);
+            border-color: rgba(96, 165, 250, 0.35);
+        }
+
+        .container {
+            max-width: 1440px;
+            margin: 0 auto;
+            padding: 28px 24px 40px;
+        }
+
+        .banner {
+            background: rgba(96, 165, 250, 0.12);
+            border: 1px solid rgba(96, 165, 250, 0.28);
+            color: var(--text);
+            border-radius: 12px;
+            padding: 16px 18px;
+            margin-bottom: 20px;
+        }
+
+        .layout-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.65fr) minmax(320px, 0.95fr);
+            gap: 20px;
+            align-items: start;
+        }
+
+        .stack {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .card {
+            background: rgba(22, 33, 62, 0.95);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 22px;
+            box-shadow: 0 18px 45px rgba(0, 0, 0, 0.24);
+        }
+
+        .card h2 {
             display: flex;
             align-items: center;
             justify-content: space-between;
+            gap: 12px;
+            font-size: 15px;
+            letter-spacing: 0.10em;
+            text-transform: uppercase;
+            color: var(--muted);
+            margin-bottom: 8px;
         }
 
-        /* Portfolio overview grid */
-        .portfolio-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-            gap: 16px;
+        .subtext {
+            color: var(--muted);
+            font-size: 14px;
+            margin-bottom: 18px;
         }
-        .stat-box {
-            background: #1a1a2e;
-            border-radius: 6px;
-            padding: 16px;
+
+        .field-row {
+            margin-bottom: 14px;
+        }
+
+        .field-row label,
+        .section-label {
+            display: block;
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-bottom: 6px;
+        }
+
+        .value-row {
+            display: flex;
+            gap: 8px;
+            align-items: stretch;
+        }
+
+        .mono-box,
+        .json-box,
+        .input,
+        .status-box {
+            width: 100%;
+            background: var(--panel-soft);
+            border: 1px solid rgba(36, 67, 109, 0.85);
+            border-radius: 10px;
+            color: var(--text);
+        }
+
+        .mono-box {
+            padding: 11px 13px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            word-break: break-word;
+            user-select: all;
+        }
+
+        .json-box {
+            padding: 14px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            min-height: 150px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .status-box {
+            padding: 12px 14px;
+            font-size: 13px;
+            color: var(--muted);
+        }
+
+        .input {
+            padding: 11px 13px;
+            font-size: 14px;
+        }
+
+        .input:focus {
+            outline: none;
+            border-color: var(--green);
+        }
+
+        .button-row {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .btn {
+            border: none;
+            border-radius: 10px;
+            padding: 10px 16px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: opacity 0.2s, transform 0.2s;
+        }
+
+        .btn:hover {
+            opacity: 0.92;
+            transform: translateY(-1px);
+        }
+
+        .btn-primary {
+            background: var(--green);
+            color: #06231d;
+        }
+
+        .btn-secondary {
+            background: #20345e;
+            color: var(--text);
+        }
+
+        .btn-danger {
+            background: rgba(251, 113, 133, 0.14);
+            color: var(--red);
+            border: 1px solid rgba(251, 113, 133, 0.25);
+        }
+
+        .template-tabs {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 12px;
+        }
+
+        .template-tab {
+            padding: 8px 12px;
+            background: var(--panel-soft);
+            border: 1px solid rgba(36, 67, 109, 0.85);
+            border-radius: 999px;
+            color: var(--muted);
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .template-tab.active {
+            background: rgba(45, 212, 191, 0.16);
+            border-color: rgba(45, 212, 191, 0.35);
+            color: var(--green);
+        }
+
+        .signal-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .signal-item {
+            background: var(--panel-soft);
+            border: 1px solid rgba(36, 67, 109, 0.75);
+            border-radius: 12px;
+            padding: 12px;
+        }
+
+        .signal-item .label {
+            color: var(--muted);
+            font-size: 11px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            margin-bottom: 6px;
+        }
+
+        .signal-item .value {
+            font-size: 15px;
+            font-weight: 700;
+        }
+
+        .snapshot-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 14px;
+        }
+
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+
+        .status-success {
+            color: var(--green);
+            background: rgba(45, 212, 191, 0.14);
+        }
+
+        .status-error {
+            color: var(--red);
+            background: rgba(251, 113, 133, 0.14);
+        }
+
+        .status-warning {
+            color: var(--yellow);
+            background: rgba(251, 191, 36, 0.14);
+        }
+
+        .empty-state {
+            padding: 24px;
+            border-radius: 12px;
+            background: rgba(26, 31, 52, 0.72);
+            border: 1px dashed rgba(141, 161, 199, 0.25);
+            color: var(--muted);
             text-align: center;
         }
-        .stat-box .label {
-            font-size: 12px;
-            color: #8888aa;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        .stat-box .value {
-            font-size: 24px;
-            font-weight: 700;
-            color: #fff;
-            margin-top: 4px;
+
+        .sidebar-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
         }
 
-        /* Tables */
+        .sidebar-item {
+            background: var(--panel-soft);
+            border: 1px solid rgba(36, 67, 109, 0.75);
+            border-radius: 12px;
+            padding: 13px;
+        }
+
+        .sidebar-item .top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 8px;
+        }
+
+        .sidebar-item .title {
+            font-size: 15px;
+            font-weight: 700;
+        }
+
+        .sidebar-meta {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .count-pill {
+            background: rgba(96, 165, 250, 0.14);
+            color: var(--blue);
+            padding: 4px 8px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        .two-up {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .portfolio-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+            margin-bottom: 18px;
+        }
+
+        .stat-box {
+            background: var(--panel-soft);
+            border-radius: 12px;
+            padding: 15px 14px;
+            border: 1px solid rgba(36, 67, 109, 0.75);
+        }
+
+        .stat-box .label {
+            font-size: 11px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .stat-box .value {
+            font-size: 22px;
+            font-weight: 700;
+            margin-top: 6px;
+        }
+
+        .positive { color: var(--green); }
+        .negative { color: var(--red); }
+
         table {
             width: 100%;
             border-collapse: collapse;
         }
-        th {
+
+        th,
+        td {
             text-align: left;
             padding: 10px 12px;
-            font-size: 12px;
-            color: #8888aa;
+            border-bottom: 1px solid rgba(36, 67, 109, 0.5);
+            vertical-align: top;
+        }
+
+        th {
+            color: var(--muted);
+            font-size: 11px;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
-            border-bottom: 1px solid #0f3460;
+            letter-spacing: 0.08em;
         }
+
         td {
-            padding: 10px 12px;
-            font-size: 14px;
-            border-bottom: 1px solid rgba(15, 52, 96, 0.5);
+            font-size: 13px;
         }
-        tr:hover td { background: rgba(15, 52, 96, 0.3); }
 
-        /* P&L coloring */
-        .positive { color: #00b894; }
-        .negative { color: #e17055; }
-
-        /* Status badges */
-        .status { padding: 3px 8px; border-radius: 3px; font-size: 12px; font-weight: 600; }
-        .status-filled { background: rgba(0, 184, 148, 0.2); color: #00b894; }
-        .status-new, .status-accepted, .status-pending_new, .status-partially_filled {
-            background: rgba(253, 203, 110, 0.2); color: #fdcb6e;
+        .status {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
         }
-        .status-canceled, .status-expired, .status-replaced {
-            background: rgba(160, 160, 192, 0.2); color: #a0a0c0;
-        }
-        .status-rejected { background: rgba(225, 112, 85, 0.2); color: #e17055; }
 
-        /* Config editor */
+        .status-filled,
+        .status-ok {
+            color: var(--green);
+            background: rgba(45, 212, 191, 0.14);
+        }
+
+        .status-error-inline {
+            color: var(--red);
+            background: rgba(251, 113, 133, 0.14);
+        }
+
+        .status-new,
+        .status-warning-inline {
+            color: var(--yellow);
+            background: rgba(251, 191, 36, 0.14);
+        }
+
+        .status-canceled {
+            color: var(--muted);
+            background: rgba(141, 161, 199, 0.12);
+        }
+
         .config-group {
-            margin-bottom: 24px;
+            margin-bottom: 22px;
         }
+
         .config-group h3 {
-            font-size: 14px;
-            color: #00b894;
+            color: var(--green);
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
             margin-bottom: 12px;
-            padding-bottom: 6px;
-            border-bottom: 1px solid #0f3460;
+            padding-bottom: 8px;
+            border-bottom: 1px solid rgba(36, 67, 109, 0.65);
         }
+
         .config-row {
             display: grid;
-            grid-template-columns: 1fr 120px;
+            grid-template-columns: minmax(0, 1fr) 160px;
             gap: 12px;
             align-items: center;
-            padding: 8px 0;
+            padding: 9px 0;
         }
+
         .config-label {
             font-size: 14px;
         }
+
         .config-label .desc {
-            font-size: 11px;
-            color: #8888aa;
-        }
-        .config-input {
-            background: #1a1a2e;
-            border: 1px solid #0f3460;
-            color: #e0e0e0;
-            padding: 8px 12px;
-            border-radius: 4px;
-            font-size: 14px;
-            width: 100%;
-            text-align: right;
-        }
-        .config-input:focus {
-            outline: none;
-            border-color: #00b894;
+            color: var(--muted);
+            font-size: 12px;
+            margin-top: 3px;
         }
 
-        /* Toggle switch */
-        .toggle-wrap { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+        .toggle-wrap {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 8px;
+        }
+
         .toggle {
-            position: relative;
             width: 44px;
             height: 24px;
-            background: #0f3460;
-            border-radius: 12px;
+            background: #24436d;
+            border-radius: 999px;
+            position: relative;
             cursor: pointer;
-            transition: background 0.2s;
         }
-        .toggle.active { background: #00b894; }
+
         .toggle::after {
             content: '';
             position: absolute;
@@ -189,497 +519,359 @@
             left: 3px;
             width: 18px;
             height: 18px;
-            background: #fff;
             border-radius: 50%;
+            background: #fff;
             transition: transform 0.2s;
         }
-        .toggle.active::after { transform: translateX(20px); }
 
-        /* Buttons */
-        .btn {
-            padding: 8px 20px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 13px;
-            font-weight: 600;
-            transition: opacity 0.2s;
+        .toggle.active {
+            background: var(--green);
         }
-        .btn:hover { opacity: 0.85; }
-        .btn-primary { background: #00b894; color: #1a1a2e; }
-        .btn-secondary { background: #0f3460; color: #e0e0e0; }
-        .btn-sm { padding: 5px 12px; font-size: 12px; }
 
-        /* Toast notification */
+        .toggle.active::after {
+            transform: translateX(20px);
+        }
+
         .toast {
             position: fixed;
-            bottom: 24px;
             right: 24px;
-            padding: 14px 24px;
-            border-radius: 6px;
-            font-size: 14px;
-            font-weight: 600;
-            z-index: 1000;
-            transform: translateY(100px);
-            opacity: 0;
-            transition: all 0.3s;
-        }
-        .toast.show { transform: translateY(0); opacity: 1; }
-        .toast-success { background: #00b894; color: #1a1a2e; }
-        .toast-error { background: #e17055; color: #fff; }
-
-        /* Empty state */
-        .empty-state {
-            text-align: center;
-            padding: 32px;
-            color: #8888aa;
-            font-size: 14px;
-        }
-
-        /* Loading spinner */
-        .loading { text-align: center; padding: 24px; color: #8888aa; }
-
-        /* ---- Setup overlay ---- */
-        .setup-overlay {
-            position: fixed;
-            inset: 0;
-            background: #1a1a2e;
-            z-index: 9999;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .setup-overlay.hidden { display: none; }
-        .setup-card {
-            background: #16213e;
-            border: 1px solid #0f3460;
+            bottom: 24px;
+            padding: 12px 18px;
             border-radius: 12px;
-            padding: 40px 48px;
-            width: 460px;
-            max-width: 95vw;
-        }
-        .setup-card h1 {
-            font-size: 24px;
-            color: #fff;
-            margin-bottom: 4px;
-        }
-        .setup-card .subtitle {
-            color: #8888aa;
-            font-size: 14px;
-            margin-bottom: 28px;
-        }
-        .setup-card label {
-            display: block;
             font-size: 13px;
-            color: #a0a0c0;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-bottom: 6px;
-            margin-top: 18px;
-        }
-        .setup-card label:first-of-type { margin-top: 0; }
-        .setup-card input[type="text"],
-        .setup-card input[type="password"] {
-            width: 100%;
-            background: #1a1a2e;
-            border: 1px solid #0f3460;
-            color: #e0e0e0;
-            padding: 10px 14px;
-            border-radius: 6px;
-            font-size: 14px;
-            font-family: 'Courier New', monospace;
-        }
-        .setup-card input:focus {
-            outline: none;
-            border-color: #00b894;
-        }
-        .setup-card .paper-row {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            margin-top: 20px;
-        }
-        .setup-card .paper-row span {
-            font-size: 14px;
-            color: #e0e0e0;
-        }
-        .setup-card .btn-connect {
-            width: 100%;
-            margin-top: 28px;
-            padding: 12px;
-            font-size: 15px;
             font-weight: 700;
-            background: #00b894;
-            color: #1a1a2e;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: opacity 0.2s;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.25s;
+            z-index: 30;
         }
-        .setup-card .btn-connect:hover { opacity: 0.85; }
-        .setup-card .btn-connect:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-        .setup-error {
-            margin-top: 14px;
-            padding: 10px 14px;
-            background: rgba(225, 112, 85, 0.15);
-            border: 1px solid #e17055;
-            border-radius: 6px;
-            color: #e17055;
-            font-size: 13px;
-            display: none;
-        }
-        .setup-link {
-            display: block;
-            text-align: center;
-            margin-top: 16px;
-            font-size: 12px;
-            color: #8888aa;
-        }
-        .setup-link a {
-            color: #00b894;
-            text-decoration: none;
-        }
-        .setup-link a:hover { text-decoration: underline; }
 
-        /* ---- Webhook widget ---- */
-        .webhook-section { margin-top: 8px; }
-        .webhook-row {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            margin-bottom: 12px;
+        .toast.show {
+            opacity: 1;
+            transform: translateY(0);
         }
-        .webhook-row label {
-            font-size: 12px;
-            color: #8888aa;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            min-width: 100px;
-            flex-shrink: 0;
+
+        .toast-success {
+            background: var(--green);
+            color: #07211c;
         }
-        .webhook-url-box {
-            flex: 1;
-            background: #1a1a2e;
-            border: 1px solid #0f3460;
-            border-radius: 4px;
-            padding: 8px 12px;
-            color: #e0e0e0;
-            font-family: 'Courier New', monospace;
-            font-size: 13px;
-            overflow-x: auto;
-            white-space: nowrap;
-            user-select: all;
+
+        .toast-error {
+            background: var(--red);
+            color: #fff;
         }
-        .btn-copy {
-            background: #0f3460;
-            color: #e0e0e0;
-            border: none;
-            border-radius: 4px;
-            padding: 8px 12px;
-            font-size: 12px;
-            cursor: pointer;
-            white-space: nowrap;
-            transition: background 0.2s;
+
+        @media (max-width: 1100px) {
+            .layout-grid,
+            .two-up,
+            .snapshot-grid {
+                grid-template-columns: 1fr;
+            }
         }
-        .btn-copy:hover { background: #00b894; color: #1a1a2e; }
-        .webhook-alert-box {
-            background: #1a1a2e;
-            border: 1px solid #0f3460;
-            border-radius: 6px;
-            padding: 14px 16px;
-            font-family: 'Courier New', monospace;
-            font-size: 13px;
-            line-height: 1.7;
-            color: #e0e0e0;
-            white-space: pre-wrap;
-            margin: 12px 0;
-            position: relative;
-        }
-        .webhook-alert-box .copy-corner {
-            position: absolute;
-            top: 8px;
-            right: 8px;
-        }
-        .webhook-tabs {
-            display: flex;
-            gap: 4px;
-            margin-bottom: 12px;
-        }
-        .webhook-tab {
-            padding: 6px 16px;
-            border-radius: 4px;
-            font-size: 12px;
-            font-weight: 600;
-            cursor: pointer;
-            background: #1a1a2e;
-            color: #8888aa;
-            border: 1px solid #0f3460;
-            transition: all 0.2s;
-        }
-        .webhook-tab.active {
-            background: #00b894;
-            color: #1a1a2e;
-            border-color: #00b894;
-        }
-        .webhook-token-display {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        .webhook-token-display .token-value {
-            flex: 1;
-            background: #1a1a2e;
-            border: 1px solid #0f3460;
-            border-radius: 4px;
-            padding: 8px 12px;
-            font-family: 'Courier New', monospace;
-            font-size: 13px;
-            color: #e0e0e0;
-        }
-        .webhook-test-result {
-            margin-top: 12px;
-            padding: 10px 14px;
-            border-radius: 6px;
-            font-size: 13px;
-            display: none;
-        }
-        .webhook-test-result.success {
-            background: rgba(0, 184, 148, 0.15);
-            border: 1px solid #00b894;
-            color: #00b894;
-        }
-        .webhook-test-result.error {
-            background: rgba(225, 112, 85, 0.15);
-            border: 1px solid #e17055;
-            color: #e17055;
-        }
-        .webhook-instructions {
-            font-size: 13px;
-            color: #a0a0c0;
-            line-height: 1.8;
-            margin-bottom: 16px;
-        }
-        .webhook-instructions strong { color: #e0e0e0; }
-        .webhook-instructions ol {
-            padding-left: 20px;
-            margin: 8px 0;
+
+        @media (max-width: 760px) {
+            .header {
+                padding: 16px 18px;
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 10px;
+            }
+
+            .container {
+                padding: 18px 14px 28px;
+            }
+
+            .value-row,
+            .button-row {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .config-row {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 </head>
 <body>
 
-<!-- ============ Credentials Setup Gate ============ -->
-<div id="setupOverlay" class="setup-overlay">
-    <div class="setup-card">
-        <h1>Crassus 2.5</h1>
-        <p class="subtitle">Connect your Alpaca account to get started.</p>
-
-        <label for="setupApiKey">API Key</label>
-        <input type="text" id="setupApiKey" placeholder="PK..." autocomplete="off" spellcheck="false">
-
-        <label for="setupSecretKey">Secret Key</label>
-        <input type="password" id="setupSecretKey" placeholder="Your Alpaca secret key" autocomplete="off" spellcheck="false">
-
-        <div class="paper-row">
-            <div id="setupPaperToggle" class="toggle active" onclick="this.classList.toggle('active')"></div>
-            <span>Paper Trading (sandbox)</span>
-        </div>
-
-        <button class="btn-connect" id="setupConnectBtn" onclick="submitCredentials()">
-            Connect to Alpaca
-        </button>
-
-        <div id="setupError" class="setup-error"></div>
-
-        <div class="setup-link">
-            Don't have an account? <a href="https://app.alpaca.markets/signup" target="_blank" rel="noopener">Sign up at Alpaca</a>
-        </div>
-    </div>
-</div>
-
 <div class="header">
     <h1>Crassus 2.5</h1>
-    <span id="tradingBadge" class="badge badge-paper">PAPER TRADING</span>
+    <span id="tradingBadge" class="badge badge-neutral">Webhook Ready</span>
 </div>
 
 <div class="container">
-
-    <!-- Section 1: Portfolio Overview -->
-    <div class="card">
-        <h2>
-            Portfolio Overview
-            <button class="btn btn-secondary btn-sm" onclick="loadPortfolio()">Refresh</button>
-        </h2>
-        <div id="portfolioGrid" class="portfolio-grid">
-            <div class="loading">Loading...</div>
-        </div>
+    <div class="banner">
+        TradingView can start sending alerts immediately. Paste the shared function URL into TradingView, and this page will read back the webhook activity feed, parsed alert conditions, and the Active Webhooks snapshot from the shared environment. Alpaca credentials are optional and only needed for broker data.
     </div>
 
-    <!-- Section 2: Open Positions -->
-    <div class="card">
-        <h2>
-            Open Positions
-            <button class="btn btn-secondary btn-sm" onclick="loadPositions()">Refresh</button>
-        </h2>
-        <div id="positionsTable">
-            <div class="loading">Loading...</div>
-        </div>
-    </div>
+    <div class="layout-grid">
+        <div class="stack">
+            <div class="card">
+                <h2>
+                    TradingView Inbox
+                    <span id="webhookForwardStatus" class="status-pill status-warning">Loading...</span>
+                </h2>
+                <p class="subtext">
+                    Use this shared endpoint as your TradingView webhook URL. In Azure-first mode, the Function App records webhook activity centrally so every partner sees the same feed.
+                </p>
 
-    <!-- Section 3: Recent Orders -->
-    <div class="card">
-        <h2>
-            Recent Orders
-            <button class="btn btn-secondary btn-sm" onclick="loadOrders()">Refresh</button>
-        </h2>
-        <div id="ordersTable">
-            <div class="loading">Loading...</div>
-        </div>
-    </div>
+                <div class="field-row">
+                    <label>Webhook URL</label>
+                    <div class="value-row">
+                        <div id="webhookUrl" class="mono-box">Loading...</div>
+                        <button class="btn btn-secondary" onclick="copyToClipboard('webhookUrl')">Copy</button>
+                    </div>
+                </div>
 
-    <!-- Section 4: TradingView Webhook -->
-    <div class="card">
-        <h2>TradingView Webhook</h2>
-        <div class="webhook-section">
+                <div class="field-row">
+                    <label>Full URL (Token Included)</label>
+                    <div class="value-row">
+                        <div id="webhookFullUrl" class="mono-box">Loading...</div>
+                        <button class="btn btn-secondary" onclick="copyToClipboard('webhookFullUrl')">Copy</button>
+                    </div>
+                </div>
 
-            <div class="webhook-instructions">
-                <strong>How to connect TradingView alerts to Crassus:</strong>
-                <ol>
-                    <li>In TradingView, create or edit an alert on your indicator/strategy.</li>
-                    <li>Under <strong>Notifications</strong>, enable <strong>Webhook URL</strong> and paste the URL below.</li>
-                    <li>Set the <strong>Alert message</strong> to the template shown below (customize ticker, strategy, mode).</li>
-                    <li><strong>Easiest:</strong> Use the <em>Full URL (with token)</em> below — paste it as the Webhook URL in TradingView. No custom headers needed.</li>
-                    <li><em>Alternative:</em> Use the base Webhook URL and add a custom header <code>X-Webhook-Token</code> with the auth token (requires TradingView Pro+).</li>
-                </ol>
-            </div>
+                <div class="field-row">
+                    <label>Webhook Token</label>
+                    <div class="value-row">
+                        <div id="webhookToken" class="mono-box">Loading...</div>
+                        <button class="btn btn-secondary" onclick="copyToClipboard('webhookToken')">Copy</button>
+                        <button class="btn btn-secondary" onclick="generateToken()">New</button>
+                    </div>
+                </div>
 
-            <!-- Webhook URL -->
-            <div class="webhook-tabs">
-                <div class="webhook-tab active" onclick="setWebhookTarget('local', this)">Local</div>
-                <div class="webhook-tab" onclick="setWebhookTarget('azure', this)">Azure (Deployed)</div>
-            </div>
+                <div class="field-row">
+                    <label>Execution Endpoint</label>
+                    <div id="webhookForwardTarget" class="status-box">Loading...</div>
+                </div>
 
-            <div class="webhook-row">
-                <label>Webhook URL</label>
-                <div class="webhook-url-box" id="webhookUrl">http://localhost:7071/api/trade</div>
-                <button class="btn-copy" onclick="copyToClipboard('webhookUrl')">Copy</button>
-            </div>
+                <div class="section-label">Recommended TradingView JSON</div>
+                <div class="template-tabs" id="templateTabs">
+                    <div class="template-tab active" onclick="setTemplate('stockBuy', this)">Stock Buy</div>
+                    <div class="template-tab" onclick="setTemplate('stockSell', this)">Stock Sell</div>
+                    <div class="template-tab" onclick="setTemplate('optionsBuy', this)">Options Buy</div>
+                    <div class="template-tab" onclick="setTemplate('optionsSell', this)">Options Sell</div>
+                </div>
 
-            <!-- Full URL with token (easiest for TradingView) -->
-            <div class="webhook-row" style="background:#0d2847; border:1px solid #00b894; border-radius:6px; padding:10px;">
-                <label style="color:#00b894; font-weight:bold;">Full URL (paste into TradingView)</label>
-                <div class="webhook-url-box" id="webhookFullUrl" style="word-break:break-all;">Loading...</div>
-                <button class="btn-copy" onclick="copyToClipboard('webhookFullUrl')">Copy</button>
-            </div>
+                <pre id="webhookTemplate" class="json-box"></pre>
 
-            <!-- Auth token -->
-            <div class="webhook-row">
-                <label>Auth Token</label>
-                <div class="webhook-token-display">
-                    <div class="webhook-url-box" id="webhookToken" style="flex:1">Loading...</div>
-                    <button class="btn-copy" onclick="copyToClipboard('webhookToken')">Copy</button>
-                    <button class="btn-copy" onclick="generateToken()" title="Generate new token">New</button>
+                <div class="button-row" style="margin-top: 14px;">
+                    <button class="btn btn-secondary" onclick="copyToClipboard('webhookTemplate')">Copy JSON</button>
+                    <button class="btn btn-primary" id="webhookTestBtn" onclick="testWebhook()">Send Test Alert</button>
+                    <button class="btn btn-danger" onclick="clearWebhooks()">Clear Snapshots</button>
                 </div>
             </div>
 
-            <!-- Alert message templates -->
-            <h3 style="font-size:13px; color:#a0a0c0; text-transform:uppercase; letter-spacing:0.5px; margin: 20px 0 8px 0;">
-                Alert Message Templates (copy into TradingView)
-            </h3>
+            <div class="card">
+                <h2>Latest Webhook Snapshot</h2>
+                <p class="subtext">
+                    Every incoming TradingView alert is stored exactly as received, plus a normalized summary showing side, strategy, mode, and forwarding outcome.
+                </p>
 
-            <div class="webhook-tabs" id="templateTabs">
-                <div class="webhook-tab active" onclick="showTemplate('stock_buy', this)">Stock Buy</div>
-                <div class="webhook-tab" onclick="showTemplate('stock_sell', this)">Stock Sell</div>
-                <div class="webhook-tab" onclick="showTemplate('options_buy', this)">Options Buy</div>
-                <div class="webhook-tab" onclick="showTemplate('options_sell', this)">Options Sell</div>
+                <div id="latestSnapshotEmpty" class="empty-state">
+                    Waiting for the first TradingView alert.
+                </div>
+
+                <div id="latestSnapshotContent" class="hidden">
+                    <div id="latestSummary" class="signal-grid"></div>
+                    <div class="button-row" style="margin-bottom: 14px;">
+                        <span id="latestParseStatus" class="status-pill status-warning">Pending</span>
+                        <span id="latestForwardPill" class="status-pill status-warning">Pending</span>
+                    </div>
+                    <div class="snapshot-grid">
+                        <div>
+                            <div class="section-label">Raw Payload</div>
+                            <pre id="latestPayload" class="json-box"></pre>
+                        </div>
+                        <div>
+                            <div class="section-label">Forward Result</div>
+                            <pre id="latestForward" class="json-box"></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="stack">
+            <div class="card">
+                <h2>
+                    Active Webhooks
+                    <span id="activeCount" class="count-pill">0</span>
+                </h2>
+                <p class="subtext">
+                    A grouped sidebar snapshot of the alert signatures seen within the configured active window.
+                </p>
+                <div id="activeWebhooks" class="sidebar-list">
+                    <div class="empty-state">No active webhooks yet.</div>
+                </div>
             </div>
 
-            <div class="webhook-alert-box" id="webhookTemplate">**New Buy Signal:**
-{{ticker}} {{interval}} Candle
-Strategy: bollinger_mean_reversion
-Mode: stock
-Volume: {{volume}}
-Price: {{close}}
-Time: {{timenow}}</div>
-            <div style="text-align: right; margin-top: 4px;">
-                <button class="btn-copy" onclick="copyToClipboard('webhookTemplate')">Copy Template</button>
+            <div class="card">
+                <h2>Broker Connection</h2>
+                <p class="subtext">
+                    Optional. Add Alpaca credentials if you want portfolio, positions, and order history to populate under the webhook monitor.
+                </p>
+
+                <div id="brokerStatus" class="status-box" style="margin-bottom: 14px;">
+                    Checking broker status...
+                </div>
+
+                <div class="field-row">
+                    <label for="setupApiKey">API Key</label>
+                    <input class="input" type="text" id="setupApiKey" placeholder="PK..." autocomplete="off" spellcheck="false">
+                </div>
+
+                <div class="field-row">
+                    <label for="setupSecretKey">Secret Key</label>
+                    <input class="input" type="password" id="setupSecretKey" placeholder="Your Alpaca secret key" autocomplete="off" spellcheck="false">
+                </div>
+
+                <div class="field-row">
+                    <label>Paper Trading</label>
+                    <div class="toggle-wrap">
+                        <span id="setupPaperLabel">ON</span>
+                        <div id="setupPaperToggle" class="toggle active" onclick="togglePaperMode()"></div>
+                    </div>
+                </div>
+
+                <div class="button-row">
+                    <button class="btn btn-primary" id="setupConnectBtn" onclick="submitCredentials()">Save Broker Credentials</button>
+                </div>
             </div>
 
-            <!-- JSON format (for advanced users) -->
-            <h3 style="font-size:13px; color:#a0a0c0; text-transform:uppercase; letter-spacing:0.5px; margin: 20px 0 8px 0;">
-                Full JSON Payload (advanced)
-            </h3>
-            <div class="webhook-alert-box" id="webhookJson">{"content": "**New Buy Signal:**\n{{ticker}} {{interval}} Candle\nStrategy: bollinger_mean_reversion\nMode: stock\nVolume: {{volume}}\nPrice: {{close}}\nTime: {{timenow}}"}</div>
-            <div style="text-align: right; margin-top: 4px;">
-                <button class="btn-copy" onclick="copyToClipboard('webhookJson')">Copy JSON</button>
+            <div class="card">
+                <h2>
+                    Recent Alerts
+                    <span id="recentCount" class="count-pill">0</span>
+                </h2>
+                <div id="recentAlerts">
+                    <div class="empty-state">Recent alerts will appear here.</div>
+                </div>
             </div>
-
-            <!-- Test button -->
-            <div style="margin-top: 20px; display: flex; gap: 8px; align-items: center;">
-                <button class="btn btn-primary" id="webhookTestBtn" onclick="testWebhook()">
-                    Send Test Webhook
-                </button>
-                <span style="font-size: 12px; color: #8888aa;" id="webhookTestNote">
-                    Sends a test AAPL buy signal to the selected endpoint
-                </span>
-            </div>
-            <div class="webhook-test-result" id="webhookTestResult"></div>
-
         </div>
     </div>
 
-    <!-- Section 5: Trading Parameters -->
-    <div class="card">
-        <h2>Trading Parameters</h2>
-        <div id="configEditor">
-            <div class="loading">Loading...</div>
+    <div class="two-up">
+        <div class="card">
+            <h2>Broker Snapshot</h2>
+            <p class="subtext">
+                These panels stay optional. If no broker is connected, the webhook inbox still works.
+            </p>
+
+            <div id="portfolioGrid" class="portfolio-grid">
+                <div class="empty-state">Broker snapshot unavailable until credentials are added.</div>
+            </div>
+
+            <div class="section-label">Open Positions</div>
+            <div id="positionsTable" style="margin-bottom: 18px;">
+                <div class="empty-state">No broker connection.</div>
+            </div>
+
+            <div class="section-label">Recent Orders</div>
+            <div id="ordersTable">
+                <div class="empty-state">No broker connection.</div>
+            </div>
         </div>
-        <div style="text-align: right; margin-top: 16px;">
-            <button class="btn btn-primary" onclick="saveConfig()">Save All</button>
+
+        <div class="card">
+            <h2>Trading Parameters</h2>
+            <p class="subtext">
+                Webhook routing settings live here too. If you want the dashboard to only store alerts, set <code>Webhook Forward Target</code> to <code>none</code>.
+            </p>
+            <div id="configEditor">
+                <div class="empty-state">Loading configuration...</div>
+            </div>
+            <div class="button-row" style="justify-content: flex-end; margin-top: 16px;">
+                <button class="btn btn-primary" onclick="saveConfig()">Save Settings</button>
+            </div>
         </div>
     </div>
-
 </div>
 
-<!-- Toast -->
 <div id="toast" class="toast"></div>
 
 <script>
-    // ======================================================================
-    // Helpers
-    // ======================================================================
+    const templateMap = {
+        stockBuy: `{
+  "ticker": "{{ticker}}",
+  "side": "buy",
+  "strategy": "bollinger_mean_reversion",
+  "mode": "stock",
+  "price": "{{close}}",
+  "volume": "{{volume}}",
+  "time": "{{timenow}}"
+}`,
+        stockSell: `{
+  "ticker": "{{ticker}}",
+  "side": "sell",
+  "strategy": "bollinger_mean_reversion",
+  "mode": "stock",
+  "price": "{{close}}",
+  "volume": "{{volume}}",
+  "time": "{{timenow}}"
+}`,
+        optionsBuy: `{
+  "ticker": "{{ticker}}",
+  "side": "buy",
+  "strategy": "lorentzian_classification",
+  "mode": "options",
+  "price": "{{close}}",
+  "volume": "{{volume}}",
+  "time": "{{timenow}}"
+}`,
+        optionsSell: `{
+  "ticker": "{{ticker}}",
+  "side": "sell",
+  "strategy": "lorentzian_classification",
+  "mode": "options",
+  "price": "{{close}}",
+  "volume": "{{volume}}",
+  "time": "{{timenow}}"
+}`
+    };
 
-    function fmt(n) {
-        if (n === null || n === undefined) return '-';
-        return Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    let configData = {};
+
+    function esc(value) {
+        return String(value ?? '')
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;');
     }
 
-    function fmtDollar(n) {
-        if (n === null || n === undefined) return '-';
-        return '$' + fmt(n);
+    function fmt(value) {
+        if (value === null || value === undefined || value === '') return '-';
+        const number = Number(value);
+        if (Number.isNaN(number)) return String(value);
+        return number.toLocaleString('en-US', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        });
     }
 
-    function fmtPct(n) {
-        if (n === null || n === undefined) return '-';
-        return fmt(n) + '%';
+    function fmtDollar(value) {
+        if (value === null || value === undefined || value === '') return '-';
+        return '$' + fmt(value);
     }
 
-    function plClass(n) {
-        if (n > 0) return 'positive';
-        if (n < 0) return 'negative';
+    function fmtPct(value) {
+        if (value === null || value === undefined || value === '') return '-';
+        return fmt(value) + '%';
+    }
+
+    function plClass(value) {
+        if (Number(value) > 0) return 'positive';
+        if (Number(value) < 0) return 'negative';
         return '';
     }
 
-    function statusClass(s) {
-        const lower = (s || '').toLowerCase();
-        if (lower === 'filled') return 'status-filled';
-        if (['new', 'accepted', 'pending_new', 'partially_filled'].includes(lower)) return 'status-new';
-        if (['canceled', 'expired', 'replaced'].includes(lower)) return 'status-canceled';
-        if (lower === 'rejected') return 'status-rejected';
-        return '';
+    function formatDate(value) {
+        if (!value) return '-';
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return String(value);
+        return date.toLocaleString();
     }
 
     function showToast(message, type) {
@@ -687,35 +879,367 @@ Time: {{timenow}}</div>
         toast.textContent = message;
         toast.className = 'toast ' + (type === 'error' ? 'toast-error' : 'toast-success');
         toast.classList.add('show');
-        setTimeout(() => toast.classList.remove('show'), 3000);
+        window.setTimeout(() => toast.classList.remove('show'), 3000);
     }
 
-    // ======================================================================
-    // Portfolio
-    // ======================================================================
+    function statusClass(status) {
+        const lower = String(status || '').toLowerCase();
+        if (['filled', 'ok', 'forwarded'].includes(lower)) return 'status-filled';
+        if (['new', 'accepted', 'pending_new', 'partially_filled', 'stored_only'].includes(lower)) return 'status-new';
+        if (['canceled', 'expired', 'replaced'].includes(lower)) return 'status-canceled';
+        if (['rejected', 'error', 'forward_error', 'parse_error'].includes(lower)) return 'status-error-inline';
+        return 'status-canceled';
+    }
+
+    function pillClass(ok, warn = false) {
+        if (ok === true) return 'status-success';
+        if (warn) return 'status-warning';
+        return 'status-error';
+    }
+
+    function copyToClipboard(elementId) {
+        const node = document.getElementById(elementId);
+        const text = node.textContent || node.innerText || '';
+        navigator.clipboard.writeText(text).then(() => {
+            showToast('Copied to clipboard', 'success');
+        }).catch(() => {
+            showToast('Clipboard copy failed', 'error');
+        });
+    }
+
+    function togglePaperMode() {
+        const toggle = document.getElementById('setupPaperToggle');
+        toggle.classList.toggle('active');
+        document.getElementById('setupPaperLabel').textContent =
+            toggle.classList.contains('active') ? 'ON' : 'OFF';
+    }
+
+    function setTemplate(key, tab) {
+        document.querySelectorAll('#templateTabs .template-tab').forEach(el => el.classList.remove('active'));
+        tab.classList.add('active');
+        document.getElementById('webhookTemplate').textContent = templateMap[key];
+    }
+
+    function loadWebhookInfo() {
+        fetch('/api/webhook/info')
+            .then(r => r.json())
+                    .then(data => {
+                        if (data.status !== 'ok') {
+                            throw new Error(data.message || 'Could not load webhook info');
+                        }
+                        document.getElementById('webhookUrl').textContent = data.local_url;
+                document.getElementById('webhookFullUrl').textContent = data.full_url;
+                document.getElementById('webhookToken').textContent = data.auth_token;
+                        document.getElementById('webhookForwardTarget').textContent =
+                    data.forward_target === 'none'
+                        ? 'Store only in dashboard fallback mode'
+                        : `${data.forward_target.toUpperCase()} -> ${data.forward_url}`;
+                document.getElementById('webhookForwardStatus').textContent =
+                    data.forward_target === 'none' ? 'Store Only' : `Forwarding: ${data.forward_target}`;
+                document.getElementById('webhookForwardStatus').className =
+                    'status-pill ' + (data.forward_target === 'none' ? 'status-warning' : 'status-success');
+            })
+            .catch(err => {
+                document.getElementById('webhookForwardStatus').textContent = 'Webhook Unavailable';
+                document.getElementById('webhookForwardStatus').className = 'status-pill status-error';
+                document.getElementById('webhookForwardTarget').textContent = err.message;
+            });
+    }
+
+    function generateToken() {
+        fetch('/api/webhook/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({}),
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status !== 'ok') {
+                throw new Error(data.message || 'Could not generate token');
+            }
+            showToast('New webhook token generated', 'success');
+            loadWebhookInfo();
+        })
+        .catch(err => showToast(err.message, 'error'));
+    }
+
+    function renderLatestSnapshot(event) {
+        const empty = document.getElementById('latestSnapshotEmpty');
+        const content = document.getElementById('latestSnapshotContent');
+        const summary = document.getElementById('latestSummary');
+        const parsePill = document.getElementById('latestParseStatus');
+        const forwardPill = document.getElementById('latestForwardPill');
+        const payloadBox = document.getElementById('latestPayload');
+        const forwardBox = document.getElementById('latestForward');
+
+        if (!event) {
+            empty.classList.remove('hidden');
+            content.classList.add('hidden');
+            return;
+        }
+
+        empty.classList.add('hidden');
+        content.classList.remove('hidden');
+
+        const parsed = event.parsed || {};
+        const forward = event.forward || {};
+
+        const cards = [
+            ['Ticker', parsed.ticker || '-'],
+            ['Side', parsed.side || '-'],
+            ['Mode', parsed.mode || '-'],
+            ['Strategy', parsed.strategy || '-'],
+            ['Price', parsed.price !== undefined ? fmtDollar(parsed.price) : '-'],
+            ['Volume', parsed.volume !== undefined && parsed.volume !== null ? fmt(parsed.volume) : '-'],
+            ['Alert Time', parsed.time || '-'],
+            ['Received', formatDate(event.received_at)],
+        ];
+
+        summary.innerHTML = cards.map(([label, value]) => `
+            <div class="signal-item">
+                <div class="label">${esc(label)}</div>
+                <div class="value">${esc(value)}</div>
+            </div>
+        `).join('');
+
+        const parseOk = !event.parse_error;
+        parsePill.textContent = parseOk ? 'Parsed' : 'Parse Error';
+        parsePill.className = 'status-pill ' + (parseOk ? 'status-success' : 'status-error');
+
+        let forwardText = 'Stored';
+        let forwardOk = forward.ok === true;
+        let forwardWarn = false;
+        if ((forward.target || '') === 'none') {
+            forwardText = 'Stored Only';
+            forwardWarn = true;
+        } else if (forward.status_code) {
+            forwardText = `Forward ${forward.status_code}`;
+        } else if (forward.error) {
+            forwardText = 'Forward Error';
+        }
+
+        forwardPill.textContent = forwardText;
+        forwardPill.className = 'status-pill ' + pillClass(forwardOk, forwardWarn);
+
+        payloadBox.textContent = JSON.stringify(event.payload || {}, null, 2);
+        forwardBox.textContent = JSON.stringify(forward || {}, null, 2);
+    }
+
+    function renderActiveWebhooks(items) {
+        const container = document.getElementById('activeWebhooks');
+        document.getElementById('activeCount').textContent = String(items.length || 0);
+
+        if (!items.length) {
+            container.innerHTML = '<div class="empty-state">No active webhooks yet.</div>';
+            return;
+        }
+
+        container.innerHTML = items.map(item => `
+            <div class="sidebar-item">
+                <div class="top">
+                    <div class="title">${esc(item.ticker)} ${esc(String(item.side || '').toUpperCase())}</div>
+                    <span class="count-pill">${esc(item.count)} alerts</span>
+                </div>
+                <div class="sidebar-meta">
+                    <span>${esc(item.strategy)}</span>
+                    <span>${esc(item.mode)}</span>
+                    <span>Last ${esc(formatDate(item.last_seen))}</span>
+                    <span>Status ${esc(item.last_status)}</span>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function renderRecentAlerts(events) {
+        const container = document.getElementById('recentAlerts');
+        document.getElementById('recentCount').textContent = String(events.length || 0);
+
+        if (!events.length) {
+            container.innerHTML = '<div class="empty-state">Recent alerts will appear here.</div>';
+            return;
+        }
+
+        let html = `<table>
+            <thead>
+                <tr>
+                    <th>Received</th>
+                    <th>Ticker</th>
+                    <th>Side</th>
+                    <th>Mode</th>
+                    <th>Strategy</th>
+                    <th>Forward</th>
+                </tr>
+            </thead>
+            <tbody>`;
+
+        for (const event of events) {
+            const parsed = event.parsed || {};
+            const forward = event.forward || {};
+            const forwardLabel = forward.status_code
+                ? String(forward.status_code)
+                : (forward.target === 'none' ? 'stored' : (forward.error ? 'error' : 'stored'));
+
+            html += `<tr>
+                <td>${esc(formatDate(event.received_at))}</td>
+                <td><strong>${esc(parsed.ticker || '-')}</strong></td>
+                <td>${esc((parsed.side || '-').toUpperCase())}</td>
+                <td>${esc(parsed.mode || '-')}</td>
+                <td>${esc(parsed.strategy || event.parse_error || '-')}</td>
+                <td><span class="status ${statusClass(forward.ok ? 'ok' : (event.parse_error ? 'error' : forwardLabel))}">${esc(forwardLabel)}</span></td>
+            </tr>`;
+        }
+
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    }
+
+    function loadWebhookActivity() {
+        fetch('/api/webhook/activity')
+            .then(r => r.json())
+            .then(data => {
+                if (data.status !== 'ok') {
+                    throw new Error(data.message || 'Could not load webhook activity');
+                }
+                renderLatestSnapshot(data.latest_event);
+                renderActiveWebhooks(data.active_webhooks || []);
+                renderRecentAlerts(data.recent_events || []);
+            })
+            .catch(err => {
+                document.getElementById('activeWebhooks').innerHTML =
+                    `<div class="empty-state">${esc(err.message)}</div>`;
+            });
+    }
+
+    function testWebhook() {
+        const btn = document.getElementById('webhookTestBtn');
+        btn.disabled = true;
+        btn.textContent = 'Sending...';
+
+        fetch('/api/webhook/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({}),
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status !== 'ok') {
+                throw new Error(data.message || 'Test webhook failed');
+            }
+            const result = data.forward || data.response_body || {};
+            if (data.response_code && data.response_code < 400) {
+                showToast('Test webhook sent to the shared function endpoint', 'success');
+            } else if (result.ok) {
+                showToast('Test webhook stored and forwarded', 'success');
+            } else if (result.target === 'none') {
+                showToast('Test webhook stored in dashboard fallback mode', 'success');
+            } else {
+                showToast('Test webhook stored. Forwarding needs attention.', 'error');
+            }
+            loadWebhookActivity();
+        })
+        .catch(err => showToast(err.message, 'error'))
+        .finally(() => {
+            btn.disabled = false;
+            btn.textContent = 'Send Test Alert';
+        });
+    }
+
+    function clearWebhooks() {
+        fetch('/api/webhook/clear', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status !== 'ok') {
+                throw new Error(data.message || 'Could not clear snapshots');
+            }
+            showToast('Webhook snapshots cleared', 'success');
+            loadWebhookActivity();
+        })
+        .catch(err => showToast(err.message, 'error'));
+    }
+
+    function loadBrokerStatus() {
+        fetch('/api/credentials/check')
+            .then(r => r.json())
+            .then(data => {
+                const statusBox = document.getElementById('brokerStatus');
+                const badge = document.getElementById('tradingBadge');
+
+                if (data.status === 'ok') {
+                    statusBox.textContent = `Connected to Alpaca account ${data.account_id}.`;
+                    badge.textContent = data.paper ? 'Paper Trading' : 'Live Trading';
+                    badge.className = 'badge ' + (data.paper ? 'badge-paper' : 'badge-live');
+                } else if (data.status === 'missing') {
+                    statusBox.textContent = 'No Alpaca credentials yet. Webhook monitoring is still active.';
+                    badge.textContent = 'Webhook Ready';
+                    badge.className = 'badge badge-neutral';
+                } else {
+                    statusBox.textContent = data.message || 'Broker credentials are present but not verified.';
+                    badge.textContent = 'Broker Attention';
+                    badge.className = 'badge badge-neutral';
+                }
+            })
+            .catch(() => {
+                document.getElementById('brokerStatus').textContent =
+                    'Could not check broker status.';
+            });
+    }
+
+    function submitCredentials() {
+        const btn = document.getElementById('setupConnectBtn');
+        const apiKey = document.getElementById('setupApiKey').value.trim();
+        const secretKey = document.getElementById('setupSecretKey').value.trim();
+        const paper = document.getElementById('setupPaperToggle').classList.contains('active');
+
+        if (!apiKey || !secretKey) {
+            showToast('Both API key and secret key are required.', 'error');
+            return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = 'Saving...';
+
+        fetch('/api/credentials/save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                api_key: apiKey,
+                secret_key: secretKey,
+                paper: paper,
+            }),
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status !== 'ok') {
+                throw new Error(data.message || 'Could not save credentials');
+            }
+            showToast('Broker credentials saved', 'success');
+            loadBrokerStatus();
+            loadPortfolio();
+            loadPositions();
+            loadOrders();
+        })
+        .catch(err => showToast(err.message, 'error'))
+        .finally(() => {
+            btn.disabled = false;
+            btn.textContent = 'Save Broker Credentials';
+        });
+    }
 
     function loadPortfolio() {
         fetch('/api/portfolio')
             .then(r => r.json())
             .then(data => {
+                const grid = document.getElementById('portfolioGrid');
                 if (data.status !== 'ok') {
-                    document.getElementById('portfolioGrid').innerHTML =
-                        '<div class="empty-state">Error: ' + (data.message || 'Unknown') + '</div>';
+                    grid.innerHTML = `<div class="empty-state">${esc(data.message || 'Broker snapshot unavailable.')}</div>`;
                     return;
                 }
+
                 const p = data.portfolio;
-
-                // Update paper/live badge
-                const badge = document.getElementById('tradingBadge');
-                if (p.paper) {
-                    badge.textContent = 'PAPER TRADING';
-                    badge.className = 'badge badge-paper';
-                } else {
-                    badge.textContent = 'LIVE TRADING';
-                    badge.className = 'badge badge-live';
-                }
-
-                document.getElementById('portfolioGrid').innerHTML = `
+                grid.innerHTML = `
                     <div class="stat-box">
                         <div class="label">Equity</div>
                         <div class="value">${fmtDollar(p.equity)}</div>
@@ -742,132 +1266,127 @@ Time: {{timenow}}</div>
                     </div>
                 `;
             })
-            .catch(err => {
+            .catch(() => {
                 document.getElementById('portfolioGrid').innerHTML =
-                    '<div class="empty-state">Failed to load portfolio data</div>';
+                    '<div class="empty-state">Failed to load broker snapshot.</div>';
             });
     }
-
-    // ======================================================================
-    // Positions
-    // ======================================================================
 
     function loadPositions() {
         fetch('/api/positions')
             .then(r => r.json())
             .then(data => {
+                const container = document.getElementById('positionsTable');
                 if (data.status !== 'ok') {
-                    document.getElementById('positionsTable').innerHTML =
-                        '<div class="empty-state">Error: ' + (data.message || 'Unknown') + '</div>';
+                    container.innerHTML = `<div class="empty-state">${esc(data.message || 'No positions available.')}</div>`;
                     return;
                 }
-                const positions = data.positions;
-                if (!positions.length) {
-                    document.getElementById('positionsTable').innerHTML =
-                        '<div class="empty-state">No open positions</div>';
+
+                if (!data.positions.length) {
+                    container.innerHTML = '<div class="empty-state">No open positions.</div>';
                     return;
                 }
 
                 let html = `<table>
-                    <thead><tr>
-                        <th>Symbol</th><th>Qty</th><th>Avg Entry</th>
-                        <th>Current</th><th>Market Value</th>
-                        <th>Unrealized P&amp;L</th><th>P&amp;L %</th>
-                    </tr></thead><tbody>`;
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Qty</th>
+                            <th>Avg Entry</th>
+                            <th>Current</th>
+                            <th>Market Value</th>
+                            <th>Unrealized P&amp;L</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
 
-                for (const p of positions) {
+                for (const pos of data.positions) {
                     html += `<tr>
-                        <td><strong>${p.symbol}</strong></td>
-                        <td>${p.qty}</td>
-                        <td>${fmtDollar(p.avg_entry)}</td>
-                        <td>${fmtDollar(p.current_price)}</td>
-                        <td>${fmtDollar(p.market_value)}</td>
-                        <td class="${plClass(p.unrealized_pl)}">${fmtDollar(p.unrealized_pl)}</td>
-                        <td class="${plClass(p.unrealized_pl_pct)}">${fmtPct(p.unrealized_pl_pct)}</td>
+                        <td><strong>${esc(pos.symbol)}</strong></td>
+                        <td>${esc(pos.qty)}</td>
+                        <td>${fmtDollar(pos.avg_entry)}</td>
+                        <td>${fmtDollar(pos.current_price)}</td>
+                        <td>${fmtDollar(pos.market_value)}</td>
+                        <td class="${plClass(pos.unrealized_pl)}">${fmtDollar(pos.unrealized_pl)} (${fmtPct(pos.unrealized_pl_pct)})</td>
                     </tr>`;
                 }
+
                 html += '</tbody></table>';
-                document.getElementById('positionsTable').innerHTML = html;
+                container.innerHTML = html;
             })
-            .catch(err => {
+            .catch(() => {
                 document.getElementById('positionsTable').innerHTML =
-                    '<div class="empty-state">Failed to load positions</div>';
+                    '<div class="empty-state">Failed to load positions.</div>';
             });
     }
-
-    // ======================================================================
-    // Orders
-    // ======================================================================
 
     function loadOrders() {
         fetch('/api/orders')
             .then(r => r.json())
             .then(data => {
+                const container = document.getElementById('ordersTable');
                 if (data.status !== 'ok') {
-                    document.getElementById('ordersTable').innerHTML =
-                        '<div class="empty-state">Error: ' + (data.message || 'Unknown') + '</div>';
+                    container.innerHTML = `<div class="empty-state">${esc(data.message || 'No orders available.')}</div>`;
                     return;
                 }
-                const orders = data.orders;
-                if (!orders.length) {
-                    document.getElementById('ordersTable').innerHTML =
-                        '<div class="empty-state">No recent orders</div>';
+
+                if (!data.orders.length) {
+                    container.innerHTML = '<div class="empty-state">No recent orders.</div>';
                     return;
                 }
 
                 let html = `<table>
-                    <thead><tr>
-                        <th>Symbol</th><th>Side</th><th>Type</th>
-                        <th>Qty</th><th>Status</th><th>Fill Price</th><th>Time</th>
-                    </tr></thead><tbody>`;
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Side</th>
+                            <th>Type</th>
+                            <th>Qty</th>
+                            <th>Status</th>
+                            <th>Fill</th>
+                            <th>Time</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
 
-                for (const o of orders) {
-                    const sideClass = o.side === 'buy' ? 'positive' : (o.side === 'sell' ? 'negative' : '');
+                for (const order of data.orders) {
                     html += `<tr>
-                        <td><strong>${o.symbol}</strong></td>
-                        <td class="${sideClass}">${o.side.toUpperCase()}</td>
-                        <td>${o.type}</td>
-                        <td>${o.qty}</td>
-                        <td><span class="status ${statusClass(o.status)}">${o.status}</span></td>
-                        <td>${o.filled_price !== null ? fmtDollar(o.filled_price) : '-'}</td>
-                        <td>${o.submitted_at || '-'}</td>
+                        <td><strong>${esc(order.symbol)}</strong></td>
+                        <td>${esc(String(order.side || '').toUpperCase())}</td>
+                        <td>${esc(order.type || '-')}</td>
+                        <td>${esc(order.qty || '-')}</td>
+                        <td><span class="status ${statusClass(order.status)}">${esc(order.status || '-')}</span></td>
+                        <td>${order.filled_price !== null ? fmtDollar(order.filled_price) : '-'}</td>
+                        <td>${esc(order.submitted_at || '-')}</td>
                     </tr>`;
                 }
+
                 html += '</tbody></table>';
-                document.getElementById('ordersTable').innerHTML = html;
+                container.innerHTML = html;
             })
-            .catch(err => {
+            .catch(() => {
                 document.getElementById('ordersTable').innerHTML =
-                    '<div class="empty-state">Failed to load orders</div>';
+                    '<div class="empty-state">Failed to load recent orders.</div>';
             });
     }
-
-    // ======================================================================
-    // Config editor
-    // ======================================================================
-
-    let configData = {};
 
     function loadConfig() {
         fetch('/api/config')
             .then(r => r.json())
             .then(data => {
                 if (data.status !== 'ok') {
-                    document.getElementById('configEditor').innerHTML =
-                        '<div class="empty-state">Error loading config</div>';
-                    return;
+                    throw new Error(data.message || 'Could not load config');
                 }
                 configData = data.config;
                 renderConfig(configData);
             })
             .catch(err => {
                 document.getElementById('configEditor').innerHTML =
-                    '<div class="empty-state">Failed to load configuration</div>';
+                    `<div class="empty-state">${esc(err.message)}</div>`;
             });
     }
 
     function renderConfig(config) {
-        // Group parameters
         const groups = {};
         for (const [key, meta] of Object.entries(config)) {
             const group = meta.group;
@@ -877,58 +1396,50 @@ Time: {{timenow}}</div>
 
         let html = '';
         for (const [groupName, params] of Object.entries(groups)) {
-            html += `<div class="config-group">
-                <h3>${groupName}</h3>`;
+            html += `<div class="config-group"><h3>${esc(groupName)}</h3>`;
 
-            for (const p of params) {
-                if (p.type === 'bool') {
-                    const isActive = (p.value || '').toLowerCase() === 'true';
+            for (const param of params) {
+                if (param.type === 'bool') {
+                    const active = String(param.value || '').toLowerCase() === 'true';
                     html += `<div class="config-row">
                         <div class="config-label">
-                            ${p.label}
-                            <div class="desc">${p.description}</div>
+                            ${esc(param.label)}
+                            <div class="desc">${esc(param.description)}</div>
                         </div>
                         <div class="toggle-wrap">
-                            <span style="font-size:12px;color:#8888aa">${isActive ? 'ON' : 'OFF'}</span>
-                            <div class="toggle ${isActive ? 'active' : ''}"
-                                 data-key="${p.key}"
-                                 onclick="toggleBool(this)"></div>
+                            <span>${active ? 'ON' : 'OFF'}</span>
+                            <div class="toggle ${active ? 'active' : ''}" data-key="${esc(param.key)}" onclick="toggleConfigBool(this)"></div>
                         </div>
                     </div>`;
                 } else {
                     html += `<div class="config-row">
                         <div class="config-label">
-                            ${p.label}
-                            <div class="desc">${p.description}</div>
+                            ${esc(param.label)}
+                            <div class="desc">${esc(param.description)}</div>
                         </div>
-                        <input class="config-input" type="text"
-                               data-key="${p.key}"
-                               value="${p.value}"
-                               placeholder="${p.default}">
+                        <input class="input config-input" type="text" data-key="${esc(param.key)}" value="${esc(param.value)}" placeholder="${esc(param.default)}">
                     </div>`;
                 }
             }
+
             html += '</div>';
         }
 
         document.getElementById('configEditor').innerHTML = html;
     }
 
-    function toggleBool(el) {
-        const isActive = el.classList.toggle('active');
-        const label = el.previousElementSibling;
-        label.textContent = isActive ? 'ON' : 'OFF';
+    function toggleConfigBool(element) {
+        element.classList.toggle('active');
+        element.previousElementSibling.textContent = element.classList.contains('active') ? 'ON' : 'OFF';
     }
 
     function saveConfig() {
         const updates = {};
 
-        // Gather text inputs
         document.querySelectorAll('.config-input').forEach(input => {
             updates[input.dataset.key] = input.value;
         });
 
-        // Gather toggles
         document.querySelectorAll('.toggle[data-key]').forEach(toggle => {
             updates[toggle.dataset.key] = toggle.classList.contains('active') ? 'true' : 'false';
         });
@@ -940,249 +1451,41 @@ Time: {{timenow}}</div>
         })
         .then(r => r.json())
         .then(data => {
-            if (data.status === 'ok') {
-                if (data.azure_error) {
-                    showToast('Saved locally. Azure sync failed: ' + data.azure_error, 'error');
-                } else {
-                    showToast(data.message || 'Configuration saved', 'success');
-                }
-            } else {
-                showToast('Error: ' + (data.message || 'Unknown'), 'error');
+            if (data.status !== 'ok') {
+                throw new Error(data.message || 'Could not save settings');
             }
-        })
-        .catch(err => showToast('Failed to save configuration', 'error'));
-    }
-
-    // ======================================================================
-    // Webhook widget
-    // ======================================================================
-
-    let webhookTarget = 'local';
-
-    const alertTemplates = {
-        stock_buy: `**New Buy Signal:**\n{{ticker}} {{interval}} Candle\nStrategy: bollinger_mean_reversion\nMode: stock\nVolume: {{volume}}\nPrice: {{close}}\nTime: {{timenow}}`,
-        stock_sell: `**New Sell Signal:**\n{{ticker}} {{interval}} Candle\nStrategy: bollinger_mean_reversion\nMode: stock\nVolume: {{volume}}\nPrice: {{close}}\nTime: {{timenow}}`,
-        options_buy: `**New Buy Signal:**\n{{ticker}} {{interval}} Candle\nStrategy: lorentzian_classification\nMode: options\nVolume: {{volume}}\nPrice: {{close}}\nTime: {{timenow}}`,
-        options_sell: `**New Sell Signal:**\n{{ticker}} {{interval}} Candle\nStrategy: lorentzian_classification\nMode: options\nVolume: {{volume}}\nPrice: {{close}}\nTime: {{timenow}}`,
-    };
-
-    function setWebhookTarget(target, tabEl) {
-        webhookTarget = target;
-        tabEl.parentElement.querySelectorAll('.webhook-tab').forEach(t => t.classList.remove('active'));
-        tabEl.classList.add('active');
-
-        fetch('/api/webhook/info')
-            .then(r => r.json())
-            .then(data => {
-                if (data.status === 'ok') {
-                    const url = target === 'azure' ? data.azure_url : data.local_url;
-                    document.getElementById('webhookUrl').textContent = url;
-                }
-            });
-    }
-
-    function showTemplate(key, tabEl) {
-        tabEl.parentElement.querySelectorAll('.webhook-tab').forEach(t => t.classList.remove('active'));
-        tabEl.classList.add('active');
-
-        const template = alertTemplates[key];
-        document.getElementById('webhookTemplate').textContent = template;
-
-        // Update JSON view
-        const jsonPayload = JSON.stringify({ content: template });
-        document.getElementById('webhookJson').textContent = jsonPayload;
-    }
-
-    function copyToClipboard(elementId) {
-        const el = document.getElementById(elementId);
-        const text = el.textContent || el.innerText;
-        navigator.clipboard.writeText(text).then(() => {
-            showToast('Copied to clipboard', 'success');
-        }).catch(() => {
-            // Fallback for older browsers
-            const range = document.createRange();
-            range.selectNodeContents(el);
-            window.getSelection().removeAllRanges();
-            window.getSelection().addRange(range);
-            document.execCommand('copy');
-            window.getSelection().removeAllRanges();
-            showToast('Copied to clipboard', 'success');
-        });
-    }
-
-    function loadWebhookInfo() {
-        fetch('/api/webhook/info')
-            .then(r => r.json())
-            .then(data => {
-                if (data.status === 'ok') {
-                    const url = webhookTarget === 'azure' ? data.azure_url : data.local_url;
-                    document.getElementById('webhookUrl').textContent = url;
-                    if (data.has_token) {
-                        const token = data.auth_token;
-                        document.getElementById('webhookToken').textContent = token;
-                        document.getElementById('webhookFullUrl').textContent = url + '?token=' + token;
-                    } else {
-                        document.getElementById('webhookToken').textContent = '(not set - click New to generate)';
-                        document.getElementById('webhookFullUrl').textContent = '(generate a token first)';
-                    }
-                }
-            });
-    }
-
-    function generateToken() {
-        fetch('/api/webhook/token', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({}),
-        })
-        .then(r => r.json())
-        .then(data => {
-            if (data.status === 'ok') {
-                document.getElementById('webhookToken').textContent = data.token;
-                const baseUrl = document.getElementById('webhookUrl').textContent;
-                document.getElementById('webhookFullUrl').textContent = baseUrl + '?token=' + data.token;
-                showToast('New webhook token generated and saved', 'success');
+            if (data.azure_error) {
+                showToast('Saved locally. Azure sync needs attention.', 'error');
             } else {
-                showToast('Error: ' + (data.message || 'Unknown'), 'error');
+                showToast('Settings saved', 'success');
             }
-        });
+            loadWebhookInfo();
+            loadWebhookActivity();
+            loadBrokerStatus();
+        })
+        .catch(err => showToast(err.message, 'error'));
     }
 
-    function testWebhook() {
-        const btn = document.getElementById('webhookTestBtn');
-        const result = document.getElementById('webhookTestResult');
-        btn.disabled = true;
-        btn.textContent = 'Sending...';
-        result.style.display = 'none';
-
-        fetch('/api/webhook/test', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ target: webhookTarget }),
-        })
-        .then(r => r.json())
-        .then(data => {
-            result.style.display = 'block';
-            if (data.status === 'ok') {
-                const code = data.response_code;
-                if (code >= 200 && code < 300) {
-                    result.className = 'webhook-test-result success';
-                    result.textContent = `Success (${code}): ` + JSON.stringify(data.response_body, null, 2);
-                } else {
-                    result.className = 'webhook-test-result error';
-                    result.textContent = `Response ${code}: ` + JSON.stringify(data.response_body, null, 2);
-                }
-            } else {
-                result.className = 'webhook-test-result error';
-                result.textContent = data.message || 'Test failed';
-            }
-        })
-        .catch(() => {
-            result.style.display = 'block';
-            result.className = 'webhook-test-result error';
-            result.textContent = 'Network error sending test';
-        })
-        .finally(() => {
-            btn.disabled = false;
-            btn.textContent = 'Send Test Webhook';
-        });
-    }
-
-    // ======================================================================
-    // Credentials gate
-    // ======================================================================
-
-    function showSetup() {
-        document.getElementById('setupOverlay').classList.remove('hidden');
-    }
-
-    function hideSetup() {
-        document.getElementById('setupOverlay').classList.add('hidden');
-    }
-
-    function submitCredentials() {
-        const btn = document.getElementById('setupConnectBtn');
-        const errBox = document.getElementById('setupError');
-        const apiKey = document.getElementById('setupApiKey').value.trim();
-        const secretKey = document.getElementById('setupSecretKey').value.trim();
-        const paper = document.getElementById('setupPaperToggle').classList.contains('active');
-
-        errBox.style.display = 'none';
-
-        if (!apiKey || !secretKey) {
-            errBox.textContent = 'Both API Key and Secret Key are required.';
-            errBox.style.display = 'block';
-            return;
-        }
-
-        btn.disabled = true;
-        btn.textContent = 'Connecting...';
-
-        fetch('/api/credentials/save', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ api_key: apiKey, secret_key: secretKey, paper: paper }),
-        })
-        .then(r => r.json())
-        .then(data => {
-            if (data.status === 'ok') {
-                hideSetup();
-                showToast('Connected to Alpaca', 'success');
-                initDashboard();
-            } else {
-                errBox.textContent = data.message || 'Authentication failed. Check your keys.';
-                errBox.style.display = 'block';
-            }
-        })
-        .catch(() => {
-            errBox.textContent = 'Network error. Is the dashboard server running?';
-            errBox.style.display = 'block';
-        })
-        .finally(() => {
-            btn.disabled = false;
-            btn.textContent = 'Connect to Alpaca';
-        });
-    }
-
-    // Allow Enter key to submit
-    document.getElementById('setupSecretKey').addEventListener('keydown', function(e) {
-        if (e.key === 'Enter') submitCredentials();
-    });
-
-    // ======================================================================
-    // Init + auto-refresh
-    // ======================================================================
-
-    function initDashboard() {
+    function init() {
+        document.getElementById('webhookTemplate').textContent = templateMap.stockBuy;
+        loadWebhookInfo();
+        loadWebhookActivity();
+        loadBrokerStatus();
         loadPortfolio();
         loadPositions();
         loadOrders();
         loadConfig();
-        loadWebhookInfo();
     }
 
-    // Check credentials on page load
-    fetch('/api/credentials/check')
-        .then(r => r.json())
-        .then(data => {
-            if (data.status === 'ok') {
-                hideSetup();
-                initDashboard();
-            } else {
-                showSetup();
-            }
-        })
-        .catch(() => {
-            // Can't reach server — show setup anyway
-            showSetup();
-        });
-
-    // Auto-refresh portfolio every 30 seconds
-    setInterval(() => {
-        if (document.getElementById('setupOverlay').classList.contains('hidden')) {
-            loadPortfolio();
+    document.getElementById('setupSecretKey').addEventListener('keydown', event => {
+        if (event.key === 'Enter') {
+            submitCredentials();
         }
-    }, 30000);
+    });
+
+    init();
+    setInterval(loadWebhookActivity, 5000);
+    setInterval(loadPortfolio, 30000);
 </script>
 
 </body>
