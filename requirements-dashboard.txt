@@ -2,3 +2,6 @@ flask>=3.0
 python-dotenv>=1.0
 alpaca-py>=0.21
 requests>=2.31.0
+gunicorn>=21.2.0
+azure-identity>=1.17.0
+azure-mgmt-web>=7.2.0

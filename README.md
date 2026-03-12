@@ -137,6 +137,8 @@ dashboard/
 └── templates/
     └── index.html           # Single-page dashboard (dark theme)
 
+dashboard_wsgi.py            # Gunicorn/App Service entrypoint for hosted dashboard
+
 backtesting/
 ├── __init__.py              # Package init with convenience imports
 ├── models.py                # Bar, Signal, Order, Position, Trade, Config, Result
@@ -520,10 +522,11 @@ When Yahoo Finance is enabled (default), the screener:
 This script:
 1. Validates Azure CLI and Functions Core Tools are installed
 2. Reads all credentials and settings from `.env` (no hardcoded secrets)
-3. Creates or updates: resource group, storage account, Function App
-4. Pushes all `.env` settings as Azure Application Settings
-5. Deploys the function code with `func azure functionapp publish`
-6. Prints the live webhook URL and auth token
+3. Creates or updates: resource group, storage account, Function App, App Service plan, and hosted dashboard Web App
+4. Pushes all `.env` settings as Azure Application Settings for both the trading backend and the hosted dashboard
+5. Enables a managed identity on the dashboard so GUI-based setting changes can sync Azure app settings after deployment
+6. Deploys the function code with `func azure functionapp publish`
+7. Deploys the dashboard code to Azure App Service and prints both shared URLs
 
 **Prerequisites:**
 - [Azure CLI](https://docs.microsoft.com/en-us/cli/azure/install-azure-cli) (`brew install azure-cli`)
@@ -538,6 +541,8 @@ This script:
 | Resource Group | `CRG` by default | Container for all resources |
 | Storage Account | `crassusstorage25` by default | Required by Azure Functions |
 | Function App | `crassus-25` by default | Hosts the trading function (Linux, Python 3.11, Consumption plan) |
+| Dashboard App Service Plan | Derived from the dashboard app name by default | Hosts the shared Flask dashboard |
+| Dashboard Web App | Derived from the function app name by default | Shared partner-facing dashboard UI |
 | Application Insights | Matches the Function App by default | Logging and monitoring |
 
 ### Functions
@@ -556,6 +561,10 @@ AZURE_LOCATION="eastus"
 AZURE_STORAGE_ACCOUNT="crassusstorage25"
 AZURE_FUNCTION_APP_NAME="crassus-25"
 AZURE_FUNCTION_BASE_URL="https://crassus-25.azurewebsites.net"
+AZURE_SUBSCRIPTION_ID=""
+AZURE_DASHBOARD_APP_NAME="crassus-25-dashboard"
+AZURE_DASHBOARD_PLAN_NAME="crassus-25-dashboard-plan"
+AZURE_DASHBOARD_SKU="B1"
 ```
 
 ---
@@ -578,6 +587,10 @@ All variables are configurable via the dashboard UI or directly in `.env`.
 |---|---|---|
 | `ALPACA_PAPER` | `true` | `true` = paper trading, `false` = live |
 | `DEFAULT_STOCK_QTY` | `1` | Shares per stock trade |
+| `AZURE_SUBSCRIPTION_ID` | Active `az login` subscription | Required for the hosted dashboard to sync Azure app settings via managed identity / SDK |
+| `AZURE_DASHBOARD_APP_NAME` | Derived from function app name | Shared Azure Web App that serves the dashboard |
+| `AZURE_DASHBOARD_PLAN_NAME` | Derived from dashboard app name | App Service plan for the hosted dashboard |
+| `AZURE_DASHBOARD_SKU` | `B1` | App Service SKU used when deploying the hosted dashboard |
 
 ### Strategy: bollinger_mean_reversion (prefix `BMR_`)
 
@@ -681,6 +694,8 @@ curl -X POST http://localhost:7071/api/trade \
 | `python-dotenv` | `.env` file loading |
 | `alpaca-py` | Portfolio and account data |
 | `requests` | Webhook test functionality |
+| `azure-identity` / `azure-mgmt-web` | Hosted dashboard setting sync via Azure management APIs |
+| `gunicorn` | Production WSGI server for Azure App Service |
 
 > **Note:** Do NOT add `yfinance`. The direct API approach via `requests` + `YahooCrumbClient` is more reliable and avoids the heavy `yfinance` dependency tree.
 
@@ -728,7 +743,8 @@ If you prefer to set things up manually instead of using the scripts:
    ```bash
    ./deploy_azure.sh
    ```
-   Or manually: `cd function_app && func azure functionapp publish "$AZURE_FUNCTION_APP_NAME" --python`
+   This deploys both the Function App and the hosted dashboard.
+   The shared dashboard URL will be `https://<AZURE_DASHBOARD_APP_NAME>.azurewebsites.net`.
 
 ---
 

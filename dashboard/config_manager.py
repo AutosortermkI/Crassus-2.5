@@ -16,16 +16,28 @@ from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
+try:
+    from azure.identity import DefaultAzureCredential
+    from azure.mgmt.web import WebSiteManagementClient
+    _AZURE_MANAGEMENT_AVAILABLE = True
+except ImportError:  # pragma: no cover - depends on optional dashboard deps
+    DefaultAzureCredential = None
+    WebSiteManagementClient = None
+    _AZURE_MANAGEMENT_AVAILABLE = False
+
 # Path to the .env file (repo root)
 ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
 
 AZURE_DEFAULTS = {
     "AZURE_FUNCTION_APP_NAME": "crassus-25",
     "AZURE_FUNCTION_BASE_URL": "",
+    "AZURE_SUBSCRIPTION_ID": "",
     "AZURE_RESOURCE_GROUP": "CRG",
     "AZURE_LOCATION": "eastus",
     "AZURE_STORAGE_ACCOUNT": "crassusstorage25",
     "AZURE_DASHBOARD_APP_NAME": "",
+    "AZURE_DASHBOARD_PLAN_NAME": "",
+    "AZURE_DASHBOARD_SKU": "B1",
 }
 
 # ---------------------------------------------------------------------------
@@ -97,6 +109,13 @@ PARAM_DEFINITIONS = OrderedDict([
         "default": AZURE_DEFAULTS["AZURE_RESOURCE_GROUP"],
         "description": "Azure resource group that hosts the shared platform",
     }),
+    ("AZURE_SUBSCRIPTION_ID", {
+        "label": "Subscription ID",
+        "group": "Azure Deployment",
+        "type": "text",
+        "default": AZURE_DEFAULTS["AZURE_SUBSCRIPTION_ID"],
+        "description": "Azure subscription ID used by the hosted dashboard to sync app settings",
+    }),
     ("AZURE_LOCATION", {
         "label": "Azure Region",
         "group": "Azure Deployment",
@@ -117,6 +136,20 @@ PARAM_DEFINITIONS = OrderedDict([
         "type": "text",
         "default": AZURE_DEFAULTS["AZURE_DASHBOARD_APP_NAME"],
         "description": "Optional Azure Web App name for a hosted dashboard",
+    }),
+    ("AZURE_DASHBOARD_PLAN_NAME", {
+        "label": "Dashboard Plan Name",
+        "group": "Azure Deployment",
+        "type": "text",
+        "default": AZURE_DEFAULTS["AZURE_DASHBOARD_PLAN_NAME"],
+        "description": "Optional App Service plan name for the hosted dashboard",
+    }),
+    ("AZURE_DASHBOARD_SKU", {
+        "label": "Dashboard SKU",
+        "group": "Azure Deployment",
+        "type": "text",
+        "default": AZURE_DEFAULTS["AZURE_DASHBOARD_SKU"],
+        "description": "App Service SKU used when deploying the hosted dashboard",
     }),
 
     # --- Bollinger Mean Reversion ---
@@ -307,9 +340,17 @@ SECRET_KEYS = {
 }
 
 
+def _can_persist_local_env() -> bool:
+    """Return True when the dashboard can safely write the local .env file."""
+    target = ENV_PATH if ENV_PATH.exists() else ENV_PATH.parent
+    return os.access(target, os.W_OK)
+
+
 def ensure_env_file() -> None:
     """Create a default .env file when the dashboard is used before setup."""
     if ENV_PATH.exists():
+        return
+    if not _can_persist_local_env():
         return
 
     lines = [
@@ -327,11 +368,20 @@ def ensure_env_file() -> None:
 def read_env() -> dict:
     """Read config from .env and process environment variables.
 
-    The local .env file wins when present so dashboard edits take effect
-    immediately, while Azure App Settings can still provide values for
-    deployments that do not rely on a local .env file.
+    Local development prefers the repo .env file so dashboard edits take
+    effect immediately. Hosted Azure deployments prefer App Settings so the
+    shared dashboard follows the live platform configuration.
     """
     values = {}
+    prefer_process_env = bool(os.environ.get("WEBSITE_SITE_NAME"))
+
+    if prefer_process_env:
+        known_keys = set(PARAM_DEFINITIONS) | SECRET_KEYS | set(AZURE_DEFAULTS)
+        for key in known_keys:
+            value = os.environ.get(key)
+            if value is not None:
+                values[key] = value.strip()
+
     if ENV_PATH.exists():
         with open(ENV_PATH, "r") as f:
             for line in f:
@@ -341,7 +391,10 @@ def read_env() -> dict:
                 if "=" not in line:
                     continue
                 key, _, value = line.partition("=")
-                values[key.strip()] = value.strip()
+                key = key.strip()
+                if prefer_process_env and key in values:
+                    continue
+                values[key] = value.strip()
 
     known_keys = set(PARAM_DEFINITIONS) | SECRET_KEYS | set(AZURE_DEFAULTS)
     for key in known_keys:
@@ -384,6 +437,9 @@ def save_credentials(api_key: str, secret_key: str, webhook_token: str = "",
     if webhook_token:
         cred_map["WEBHOOK_AUTH_TOKEN"] = webhook_token
 
+    if not _can_persist_local_env():
+        return
+
     if not ENV_PATH.exists():
         # Generate a fresh .env with credentials + all defaults
         lines = [
@@ -412,6 +468,8 @@ def save_config(updates: dict, allow_secret_keys: bool = False) -> None:
     Args:
         updates: dict of {key: new_value} to write.
     """
+    if not _can_persist_local_env():
+        return
     ensure_env_file()
     # Read existing lines
     lines = []
@@ -459,7 +517,8 @@ def ensure_webhook_token() -> str:
         return token
 
     token = secrets.token_hex(16)
-    save_config({"WEBHOOK_AUTH_TOKEN": token}, allow_secret_keys=True)
+    if _can_persist_local_env():
+        save_config({"WEBHOOK_AUTH_TOKEN": token}, allow_secret_keys=True)
     return token
 
 
@@ -471,7 +530,8 @@ def ensure_dashboard_session_secret() -> str:
         return secret
 
     secret = secrets.token_urlsafe(32)
-    save_config({"DASHBOARD_SESSION_SECRET": secret}, allow_secret_keys=True)
+    if _can_persist_local_env():
+        save_config({"DASHBOARD_SESSION_SECRET": secret}, allow_secret_keys=True)
     return secret
 
 
@@ -491,6 +551,7 @@ def get_azure_settings(overrides: Optional[dict] = None) -> dict:
     return {
         "function_app_name": function_app_name,
         "function_base_url": function_base_url.rstrip("/"),
+        "subscription_id": (env.get("AZURE_SUBSCRIPTION_ID") or "").strip(),
         "resource_group": (
             env.get("AZURE_RESOURCE_GROUP") or AZURE_DEFAULTS["AZURE_RESOURCE_GROUP"]
         ).strip(),
@@ -499,6 +560,10 @@ def get_azure_settings(overrides: Optional[dict] = None) -> dict:
             env.get("AZURE_STORAGE_ACCOUNT") or AZURE_DEFAULTS["AZURE_STORAGE_ACCOUNT"]
         ).strip(),
         "dashboard_app_name": (env.get("AZURE_DASHBOARD_APP_NAME") or "").strip(),
+        "dashboard_plan_name": (env.get("AZURE_DASHBOARD_PLAN_NAME") or "").strip(),
+        "dashboard_sku": (
+            env.get("AZURE_DASHBOARD_SKU") or AZURE_DEFAULTS["AZURE_DASHBOARD_SKU"]
+        ).strip(),
     }
 
 
@@ -528,6 +593,27 @@ def azure_cli_available() -> bool:
     return shutil.which("az") is not None
 
 
+def _resolve_subscription_id(settings: dict) -> str:
+    """Resolve the Azure subscription ID from config or the active Azure CLI account."""
+    subscription_id = (settings.get("subscription_id") or "").strip()
+    if subscription_id:
+        return subscription_id
+    if not azure_cli_available():
+        return ""
+    try:
+        result = subprocess.run(
+            ["az", "account", "show", "--query", "id", "-o", "tsv"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except Exception:
+        return ""
+    return ""
+
+
 def _run_azure_settings_command(cmd: List[str], target_name: str) -> dict:
     try:
         result = subprocess.run(
@@ -547,6 +633,113 @@ def _run_azure_settings_command(cmd: List[str], target_name: str) -> dict:
         return {"ok": False, "error": str(e)}
 
 
+def _sync_app_settings_with_management_api(
+    client,
+    resource_group: str,
+    app_name: str,
+    updates: dict,
+) -> dict:
+    """Update one App Service's application settings via Azure management APIs."""
+    try:
+        current = client.web_apps.list_application_settings(resource_group, app_name)
+        properties = dict(getattr(current, "properties", {}) or {})
+        properties.update({k: str(v) for k, v in updates.items()})
+        client.web_apps.update_application_settings(
+            resource_group,
+            app_name,
+            {"properties": properties},
+        )
+        return {"ok": True}
+    except Exception as e:
+        logger.warning("Azure management sync failed for %s: %s", app_name, e)
+        return {"ok": False, "error": str(e)}
+
+
+def _sync_settings_with_management_api(settings: dict, updates: dict) -> dict:
+    """Use DefaultAzureCredential + Azure management APIs to sync settings."""
+    if not _AZURE_MANAGEMENT_AVAILABLE:
+        return {"ok": False, "error": "Azure management SDK is not installed."}
+
+    subscription_id = _resolve_subscription_id(settings)
+    if not subscription_id:
+        return {"ok": False, "error": "AZURE_SUBSCRIPTION_ID is not configured and no Azure CLI account is active."}
+
+    credential = None
+    client = None
+    failures = []
+    try:
+        credential = DefaultAzureCredential(exclude_interactive_browser_credential=True)
+        client = WebSiteManagementClient(credential, subscription_id)
+
+        function_result = _sync_app_settings_with_management_api(
+            client,
+            settings["resource_group"],
+            settings["function_app_name"],
+            updates,
+        )
+        if not function_result["ok"]:
+            failures.append(function_result["error"])
+
+        if settings["dashboard_app_name"]:
+            dashboard_result = _sync_app_settings_with_management_api(
+                client,
+                settings["resource_group"],
+                settings["dashboard_app_name"],
+                updates,
+            )
+            if not dashboard_result["ok"]:
+                failures.append(dashboard_result["error"])
+    finally:
+        if client is not None and hasattr(client, "close"):
+            client.close()
+        if credential is not None and hasattr(credential, "close"):
+            credential.close()
+
+    if failures:
+        return {"ok": False, "error": "; ".join(failures)}
+    return {"ok": True}
+
+
+def _sync_settings_with_cli(settings: dict, updates: dict) -> dict:
+    """Use Azure CLI to sync app settings when running locally."""
+    if not azure_cli_available():
+        return {"ok": False, "error": "Azure CLI (az) is not installed."}
+
+    settings_args = [f"{k}={v}" for k, v in updates.items()]
+    failures = []
+
+    function_cmd = [
+        "az", "functionapp", "config", "appsettings", "set",
+        "--name", settings["function_app_name"],
+        "--resource-group", settings["resource_group"],
+        "--settings",
+    ] + settings_args + ["--output", "none"]
+    function_result = _run_azure_settings_command(
+        function_cmd,
+        f"Function App {settings['function_app_name']}",
+    )
+    if not function_result["ok"]:
+        failures.append(function_result["error"])
+
+    if settings["dashboard_app_name"]:
+        dashboard_cmd = [
+            "az", "webapp", "config", "appsettings", "set",
+            "--name", settings["dashboard_app_name"],
+            "--resource-group", settings["resource_group"],
+            "--settings",
+        ] + settings_args + ["--output", "none"]
+        dashboard_result = _run_azure_settings_command(
+            dashboard_cmd,
+            f"Dashboard App {settings['dashboard_app_name']}",
+        )
+        if not dashboard_result["ok"]:
+            failures.append(dashboard_result["error"])
+
+    if failures:
+        return {"ok": False, "error": "; ".join(failures)}
+    return {"ok": True}
+
+
 def sync_settings_to_azure(updates: dict) -> dict:
     """Push config key=value pairs to the Azure Function App.
 
@@ -557,43 +750,21 @@ def sync_settings_to_azure(updates: dict) -> dict:
     Returns ``{"ok": True}`` on success or ``{"ok": False, "error": ...}``
     on failure.
     """
-    if not azure_cli_available():
-        return {"ok": False, "error": "Azure CLI (az) is not installed."}
-
     if not updates:
         return {"ok": True}
 
     azure_settings = get_azure_settings(overrides=updates)
-    settings_args = [f"{k}={v}" for k, v in updates.items()]
-    failures = []
+    normalized_updates = {k: str(v) for k, v in updates.items()}
 
-    function_cmd = [
-        "az", "functionapp", "config", "appsettings", "set",
-        "--name", azure_settings["function_app_name"],
-        "--resource-group", azure_settings["resource_group"],
-        "--settings",
-    ] + settings_args + ["--output", "none"]
-    function_result = _run_azure_settings_command(
-        function_cmd,
-        f"Function App {azure_settings['function_app_name']}",
-    )
-    if not function_result["ok"]:
-        failures.append(function_result["error"])
+    management_result = _sync_settings_with_management_api(azure_settings, normalized_updates)
+    if management_result["ok"]:
+        return management_result
 
-    if azure_settings["dashboard_app_name"]:
-        dashboard_cmd = [
-            "az", "webapp", "config", "appsettings", "set",
-            "--name", azure_settings["dashboard_app_name"],
-            "--resource-group", azure_settings["resource_group"],
-            "--settings",
-        ] + settings_args + ["--output", "none"]
-        dashboard_result = _run_azure_settings_command(
-            dashboard_cmd,
-            f"Dashboard App {azure_settings['dashboard_app_name']}",
-        )
-        if not dashboard_result["ok"]:
-            failures.append(dashboard_result["error"])
+    cli_result = _sync_settings_with_cli(azure_settings, normalized_updates)
+    if cli_result["ok"]:
+        return cli_result
 
-    if failures:
-        return {"ok": False, "error": "; ".join(failures)}
-    return {"ok": True}
+    return {
+        "ok": False,
+        "error": f"{management_result['error']}; {cli_result['error']}",
+    }
