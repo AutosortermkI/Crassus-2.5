@@ -12,11 +12,21 @@ import logging
 import secrets
 from pathlib import Path
 from collections import OrderedDict
+from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
 # Path to the .env file (repo root)
 ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
+
+AZURE_DEFAULTS = {
+    "AZURE_FUNCTION_APP_NAME": "crassus-25",
+    "AZURE_FUNCTION_BASE_URL": "",
+    "AZURE_RESOURCE_GROUP": "CRG",
+    "AZURE_LOCATION": "eastus",
+    "AZURE_STORAGE_ACCOUNT": "crassusstorage25",
+    "AZURE_DASHBOARD_APP_NAME": "",
+}
 
 # ---------------------------------------------------------------------------
 # Parameter definitions with metadata for the dashboard UI
@@ -65,6 +75,48 @@ PARAM_DEFINITIONS = OrderedDict([
         "type": "int",
         "default": "50",
         "description": "Maximum number of webhook snapshots to retain on disk",
+    }),
+    ("AZURE_FUNCTION_APP_NAME", {
+        "label": "Function App Name",
+        "group": "Azure Deployment",
+        "type": "text",
+        "default": AZURE_DEFAULTS["AZURE_FUNCTION_APP_NAME"],
+        "description": "Azure Function App name used for deployment and settings sync",
+    }),
+    ("AZURE_FUNCTION_BASE_URL", {
+        "label": "Function Base URL",
+        "group": "Azure Deployment",
+        "type": "text",
+        "default": AZURE_DEFAULTS["AZURE_FUNCTION_BASE_URL"],
+        "description": "Optional override for the deployed Function base URL",
+    }),
+    ("AZURE_RESOURCE_GROUP", {
+        "label": "Resource Group",
+        "group": "Azure Deployment",
+        "type": "text",
+        "default": AZURE_DEFAULTS["AZURE_RESOURCE_GROUP"],
+        "description": "Azure resource group that hosts the shared platform",
+    }),
+    ("AZURE_LOCATION", {
+        "label": "Azure Region",
+        "group": "Azure Deployment",
+        "type": "text",
+        "default": AZURE_DEFAULTS["AZURE_LOCATION"],
+        "description": "Azure region used by deployment scripts",
+    }),
+    ("AZURE_STORAGE_ACCOUNT", {
+        "label": "Storage Account",
+        "group": "Azure Deployment",
+        "type": "text",
+        "default": AZURE_DEFAULTS["AZURE_STORAGE_ACCOUNT"],
+        "description": "Storage account name used by the Function App deployment",
+    }),
+    ("AZURE_DASHBOARD_APP_NAME", {
+        "label": "Dashboard App Name",
+        "group": "Azure Deployment",
+        "type": "text",
+        "default": AZURE_DEFAULTS["AZURE_DASHBOARD_APP_NAME"],
+        "description": "Optional Azure Web App name for a hosted dashboard",
     }),
 
     # --- Bollinger Mean Reversion ---
@@ -245,7 +297,14 @@ PARAM_DEFINITIONS = OrderedDict([
 ])
 
 # Keys that are secrets and should not be exposed in the config editor
-SECRET_KEYS = {"ALPACA_API_KEY", "ALPACA_SECRET_KEY", "WEBHOOK_AUTH_TOKEN"}
+SECRET_KEYS = {
+    "ALPACA_API_KEY",
+    "ALPACA_SECRET_KEY",
+    "WEBHOOK_AUTH_TOKEN",
+    "DASHBOARD_ACCESS_PASSWORD",
+    "DASHBOARD_ACCESS_PASSWORD_HASH",
+    "DASHBOARD_SESSION_SECRET",
+}
 
 
 def ensure_env_file() -> None:
@@ -266,20 +325,31 @@ def ensure_env_file() -> None:
 
 
 def read_env() -> dict:
-    """Read the .env file and return a dict of all key=value pairs."""
-    ensure_env_file()
+    """Read config from .env and process environment variables.
+
+    The local .env file wins when present so dashboard edits take effect
+    immediately, while Azure App Settings can still provide values for
+    deployments that do not rely on a local .env file.
+    """
     values = {}
-    if not ENV_PATH.exists():
-        return values
-    with open(ENV_PATH, "r") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            if "=" not in line:
-                continue
-            key, _, value = line.partition("=")
-            values[key.strip()] = value.strip()
+    if ENV_PATH.exists():
+        with open(ENV_PATH, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                values[key.strip()] = value.strip()
+
+    known_keys = set(PARAM_DEFINITIONS) | SECRET_KEYS | set(AZURE_DEFAULTS)
+    for key in known_keys:
+        if key in values:
+            continue
+        value = os.environ.get(key)
+        if value is not None:
+            values[key] = value.strip()
     return values
 
 
@@ -393,26 +463,96 @@ def ensure_webhook_token() -> str:
     return token
 
 
+def ensure_dashboard_session_secret() -> str:
+    """Return a stable Flask session secret for dashboard logins."""
+    env = read_env()
+    secret = (env.get("DASHBOARD_SESSION_SECRET") or "").strip()
+    if secret:
+        return secret
+
+    secret = secrets.token_urlsafe(32)
+    save_config({"DASHBOARD_SESSION_SECRET": secret}, allow_secret_keys=True)
+    return secret
+
+
+def get_azure_settings(overrides: Optional[dict] = None) -> dict:
+    """Resolve Azure resource names and URLs from config plus optional updates."""
+    env = read_env()
+    if overrides:
+        env.update({key: str(value) for key, value in overrides.items()})
+
+    function_app_name = (
+        env.get("AZURE_FUNCTION_APP_NAME") or AZURE_DEFAULTS["AZURE_FUNCTION_APP_NAME"]
+    ).strip()
+    function_base_url = (env.get("AZURE_FUNCTION_BASE_URL") or "").strip()
+    if not function_base_url:
+        function_base_url = f"https://{function_app_name}.azurewebsites.net"
+
+    return {
+        "function_app_name": function_app_name,
+        "function_base_url": function_base_url.rstrip("/"),
+        "resource_group": (
+            env.get("AZURE_RESOURCE_GROUP") or AZURE_DEFAULTS["AZURE_RESOURCE_GROUP"]
+        ).strip(),
+        "location": (env.get("AZURE_LOCATION") or AZURE_DEFAULTS["AZURE_LOCATION"]).strip(),
+        "storage_account": (
+            env.get("AZURE_STORAGE_ACCOUNT") or AZURE_DEFAULTS["AZURE_STORAGE_ACCOUNT"]
+        ).strip(),
+        "dashboard_app_name": (env.get("AZURE_DASHBOARD_APP_NAME") or "").strip(),
+    }
+
+
+def get_azure_function_trade_url(env: Optional[dict] = None) -> str:
+    """Return the configured Azure trade endpoint URL."""
+    settings = get_azure_settings(env)
+    base_url = settings["function_base_url"]
+    if base_url.endswith("/api/trade"):
+        return base_url
+    return f"{base_url}/api/trade"
+
+
+def get_azure_function_activity_url(env: Optional[dict] = None) -> str:
+    """Return the configured Azure activity endpoint URL."""
+    trade_url = get_azure_function_trade_url(env)
+    if trade_url.endswith("/api/trade"):
+        return trade_url[:-6] + "/webhook-activity"
+    return ""
+
+
 # ---------------------------------------------------------------------------
 # Azure Function App settings sync
 # ---------------------------------------------------------------------------
-
-# Azure resource identifiers (must match deploy_azure.sh / deploy_azure.bat)
-AZURE_FUNCTION_APP_NAME = "crassus-25"
-AZURE_RESOURCE_GROUP = "CRG"
-
 
 def azure_cli_available() -> bool:
     """Return True if the ``az`` CLI is installed."""
     return shutil.which("az") is not None
 
 
+def _run_azure_settings_command(cmd: List[str], target_name: str) -> dict:
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            error_msg = result.stderr.strip() or f"az exited with code {result.returncode}"
+            logger.warning("Azure sync failed for %s: %s", target_name, error_msg)
+            return {"ok": False, "error": error_msg}
+        return {"ok": True}
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": f"Azure CLI command timed out for {target_name}."}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 def sync_settings_to_azure(updates: dict) -> dict:
     """Push config key=value pairs to the Azure Function App.
 
-    Uses ``az functionapp config appsettings set`` to update the live
-    environment variables on the deployed Function App so the dashboard
-    and Azure stay in sync.
+    Uses ``az functionapp config appsettings set`` for the trade backend and,
+    when configured, ``az webapp config appsettings set`` for the hosted
+    dashboard so shared Azure settings stay aligned.
 
     Returns ``{"ok": True}`` on success or ``{"ok": False, "error": ...}``
     on failure.
@@ -423,29 +563,37 @@ def sync_settings_to_azure(updates: dict) -> dict:
     if not updates:
         return {"ok": True}
 
-    # Build the settings list: KEY1=VALUE1 KEY2=VALUE2 ...
+    azure_settings = get_azure_settings(overrides=updates)
     settings_args = [f"{k}={v}" for k, v in updates.items()]
+    failures = []
 
-    cmd = [
+    function_cmd = [
         "az", "functionapp", "config", "appsettings", "set",
-        "--name", AZURE_FUNCTION_APP_NAME,
-        "--resource-group", AZURE_RESOURCE_GROUP,
+        "--name", azure_settings["function_app_name"],
+        "--resource-group", azure_settings["resource_group"],
         "--settings",
     ] + settings_args + ["--output", "none"]
+    function_result = _run_azure_settings_command(
+        function_cmd,
+        f"Function App {azure_settings['function_app_name']}",
+    )
+    if not function_result["ok"]:
+        failures.append(function_result["error"])
 
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=30,
+    if azure_settings["dashboard_app_name"]:
+        dashboard_cmd = [
+            "az", "webapp", "config", "appsettings", "set",
+            "--name", azure_settings["dashboard_app_name"],
+            "--resource-group", azure_settings["resource_group"],
+            "--settings",
+        ] + settings_args + ["--output", "none"]
+        dashboard_result = _run_azure_settings_command(
+            dashboard_cmd,
+            f"Dashboard App {azure_settings['dashboard_app_name']}",
         )
-        if result.returncode != 0:
-            error_msg = result.stderr.strip() or f"az exited with code {result.returncode}"
-            logger.warning("Azure sync failed: %s", error_msg)
-            return {"ok": False, "error": error_msg}
-        return {"ok": True}
-    except subprocess.TimeoutExpired:
-        return {"ok": False, "error": "Azure CLI command timed out."}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
+        if not dashboard_result["ok"]:
+            failures.append(dashboard_result["error"])
+
+    if failures:
+        return {"ok": False, "error": "; ".join(failures)}
+    return {"ok": True}

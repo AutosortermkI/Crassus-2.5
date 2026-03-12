@@ -17,6 +17,7 @@ Endpoint: ``POST /api/trade``
 import os
 import json
 import logging
+from typing import Optional
 
 import azure.functions as func
 from alpaca.trading.client import TradingClient
@@ -358,7 +359,7 @@ def _record_activity(
     correlation_id: str,
     response: func.HttpResponse,
     signal=None,
-    parse_error: str | None = None,
+    parse_error: Optional[str] = None,
 ) -> None:
     """Persist a webhook snapshot for the Azure-centric dashboard."""
     try:

@@ -12,4 +12,10 @@ else
     source "$DIR/.venv/bin/activate"
 fi
 
-python -m pytest "$DIR/tests/" -v
+if ! python -c "import scipy, pytest" >/dev/null 2>&1; then
+    pip install -r "$DIR/function_app/requirements.txt" --quiet
+    pip install pytest --quiet
+fi
+
+cd "$DIR"
+python -m pytest -v

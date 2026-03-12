@@ -29,13 +29,55 @@ if %ERRORLEVEL% neq 0 (
 echo [OK] Azure Functions Core Tools found.
 
 REM ------------------------------------------------------------------
-REM Configuration — edit these if you want different names
+REM Configuration defaults (can be overridden in .env)
 REM ------------------------------------------------------------------
-set RESOURCE_GROUP=CRG
-set LOCATION=eastus
-set STORAGE_ACCOUNT=crassusstorage25
-set FUNCTION_APP_NAME=crassus-25
+set DEFAULT_RESOURCE_GROUP=CRG
+set DEFAULT_LOCATION=eastus
+set DEFAULT_STORAGE_ACCOUNT=crassusstorage25
+set DEFAULT_FUNCTION_APP_NAME=crassus-25
 set PYTHON_VERSION=3.11
+
+set SCRIPT_DIR=%~dp0
+set ENV_FILE=%SCRIPT_DIR%.env
+
+if not exist "%ENV_FILE%" (
+    echo [ERROR] .env file not found at %ENV_FILE%
+    echo         Run setup.bat or the dashboard first to create it.
+    exit /b 1
+)
+
+call :load_env_var ALPACA_API_KEY
+call :load_env_var ALPACA_SECRET_KEY
+call :load_env_var WEBHOOK_AUTH_TOKEN
+call :load_env_var AZURE_RESOURCE_GROUP
+call :load_env_var AZURE_LOCATION
+call :load_env_var AZURE_STORAGE_ACCOUNT
+call :load_env_var AZURE_FUNCTION_APP_NAME
+call :load_env_var AZURE_FUNCTION_BASE_URL
+
+if not defined ALPACA_API_KEY (
+    echo [ERROR] ALPACA_API_KEY and ALPACA_SECRET_KEY must be set in .env
+    exit /b 1
+)
+if not defined ALPACA_SECRET_KEY (
+    echo [ERROR] ALPACA_API_KEY and ALPACA_SECRET_KEY must be set in .env
+    exit /b 1
+)
+
+if not defined WEBHOOK_AUTH_TOKEN (
+    for /f %%t in ('python -c "import secrets; print(secrets.token_hex(16))"') do set WEBHOOK_AUTH_TOKEN=%%t
+    echo [INFO] Auto-generated WEBHOOK_AUTH_TOKEN: !WEBHOOK_AUTH_TOKEN!
+    echo WEBHOOK_AUTH_TOKEN=!WEBHOOK_AUTH_TOKEN!>>"%ENV_FILE%"
+    echo [OK] Token saved to .env
+)
+
+if defined AZURE_RESOURCE_GROUP (set RESOURCE_GROUP=!AZURE_RESOURCE_GROUP!) else set RESOURCE_GROUP=%DEFAULT_RESOURCE_GROUP%
+if defined AZURE_LOCATION (set LOCATION=!AZURE_LOCATION!) else set LOCATION=%DEFAULT_LOCATION%
+if defined AZURE_STORAGE_ACCOUNT (set STORAGE_ACCOUNT=!AZURE_STORAGE_ACCOUNT!) else set STORAGE_ACCOUNT=%DEFAULT_STORAGE_ACCOUNT%
+if defined AZURE_FUNCTION_APP_NAME (set FUNCTION_APP_NAME=!AZURE_FUNCTION_APP_NAME!) else set FUNCTION_APP_NAME=%DEFAULT_FUNCTION_APP_NAME%
+if defined AZURE_FUNCTION_BASE_URL (set FUNCTION_BASE_URL=!AZURE_FUNCTION_BASE_URL!) else set FUNCTION_BASE_URL=https://%FUNCTION_APP_NAME%.azurewebsites.net
+
+echo [OK] Credentials loaded from .env
 
 REM ------------------------------------------------------------------
 REM Login check
@@ -52,10 +94,18 @@ if %ERRORLEVEL% neq 0 (
     )
 )
 echo [OK] Logged in to Azure.
-
-REM Show which subscription is active
 for /f "delims=" %%s in ('az account show --query "name" -o tsv') do echo     Subscription: %%s
 echo.
+
+REM ------------------------------------------------------------------
+REM Create resource group (if it doesn't exist)
+REM ------------------------------------------------------------------
+echo Ensuring resource group "%RESOURCE_GROUP%" exists...
+az group create ^
+    --name %RESOURCE_GROUP% ^
+    --location %LOCATION% ^
+    --output none >nul 2>&1
+echo [OK] Resource group ready.
 
 REM ------------------------------------------------------------------
 REM Create storage account (Function Apps require one)
@@ -70,7 +120,7 @@ az storage account create ^
 if %ERRORLEVEL% neq 0 (
     echo [ERROR] Failed to create storage account.
     echo         The name must be globally unique, all lowercase, 3-24 chars.
-    echo         Try changing STORAGE_ACCOUNT in this script.
+    echo         Update AZURE_STORAGE_ACCOUNT in .env and try again.
     exit /b 1
 )
 echo [OK] Storage account created.
@@ -92,49 +142,29 @@ az functionapp create ^
 if %ERRORLEVEL% neq 0 (
     echo [ERROR] Failed to create Function App.
     echo         The name must be globally unique.
-    echo         Try changing FUNCTION_APP_NAME in this script.
+    echo         Update AZURE_FUNCTION_APP_NAME in .env and try again.
     exit /b 1
 )
 echo [OK] Function App created.
 
 REM ------------------------------------------------------------------
-REM Set application settings (your secrets + config)
+REM Set application settings from .env
 REM ------------------------------------------------------------------
 echo.
-echo Pushing application settings...
+echo Pushing application settings from .env...
+set SETTINGS=
+for /f "usebackq tokens=* delims=" %%L in ("%ENV_FILE%") do (
+    set LINE=%%L
+    if not "!LINE!"=="" if /I not "!LINE:~0,1!"=="#" (
+        echo !LINE! | findstr "=" >nul
+        if !ERRORLEVEL! equ 0 set SETTINGS=!SETTINGS! !LINE!
+    )
+)
+
 az functionapp config appsettings set ^
     --name %FUNCTION_APP_NAME% ^
     --resource-group %RESOURCE_GROUP% ^
-    --settings ^
-        ALPACA_API_KEY=PKODDCN5U3KVXG4NJZFXRWMHZL ^
-        ALPACA_SECRET_KEY=65oWdZEJXdSP3LqmscBRYaMcqXs7igN9TcyN9tLV899K ^
-        WEBHOOK_AUTH_TOKEN=test-live-token-2025 ^
-        ALPACA_PAPER=true ^
-        DEFAULT_STOCK_QTY=1 ^
-        BMR_STOCK_TP_PCT=0.2 ^
-        BMR_STOCK_SL_PCT=0.1 ^
-        BMR_STOCK_STOP_LIMIT_PCT=0.15 ^
-        BMR_OPTIONS_TP_PCT=20.0 ^
-        BMR_OPTIONS_SL_PCT=10.0 ^
-        LC_STOCK_TP_PCT=1.0 ^
-        LC_STOCK_SL_PCT=0.8 ^
-        LC_STOCK_STOP_LIMIT_PCT=0.9 ^
-        LC_OPTIONS_TP_PCT=50.0 ^
-        LC_OPTIONS_SL_PCT=40.0 ^
-        OPTIONS_DTE_MIN=14 ^
-        OPTIONS_DTE_MAX=45 ^
-        OPTIONS_DELTA_MIN=0.30 ^
-        OPTIONS_DELTA_MAX=0.70 ^
-        OPTIONS_MIN_OI=100 ^
-        OPTIONS_MIN_VOLUME=10 ^
-        OPTIONS_MAX_SPREAD_PCT=5.0 ^
-        OPTIONS_MIN_PRICE=0.50 ^
-        OPTIONS_MAX_PRICE=50.0 ^
-        RISK_FREE_RATE=0.05 ^
-        YAHOO_ENABLED=true ^
-        YAHOO_RETRY_COUNT=5 ^
-        YAHOO_BACKOFF_BASE=2 ^
-        MAX_DOLLAR_RISK=50.0 ^
+    --settings !SETTINGS! ^
     --output none
 if %ERRORLEVEL% neq 0 (
     echo [ERROR] Failed to set application settings.
@@ -147,8 +177,8 @@ REM Deploy the function code
 REM ------------------------------------------------------------------
 echo.
 echo Deploying function code...
-pushd function_app
-func azure functionapp publish %FUNCTION_APP_NAME%
+pushd "%SCRIPT_DIR%function_app"
+func azure functionapp publish %FUNCTION_APP_NAME% --python
 if %ERRORLEVEL% neq 0 (
     echo [ERROR] Deployment failed.
     popd
@@ -156,6 +186,13 @@ if %ERRORLEVEL% neq 0 (
 )
 popd
 echo [OK] Deployment complete.
+
+if "!FUNCTION_BASE_URL:~-10!"=="/api/trade" (
+    set ENDPOINT=!FUNCTION_BASE_URL!
+) else (
+    if "!FUNCTION_BASE_URL:~-1!"=="/" set FUNCTION_BASE_URL=!FUNCTION_BASE_URL:~0,-1!
+    set ENDPOINT=!FUNCTION_BASE_URL!/api/trade
+)
 
 REM ------------------------------------------------------------------
 REM Done — show the endpoint
@@ -166,17 +203,26 @@ echo   Deployment complete!
 echo ====================================
 echo.
 echo Your webhook endpoint:
-echo   https://%FUNCTION_APP_NAME%.azurewebsites.net/api/trade
+echo   !ENDPOINT!
 echo.
 echo TradingView webhook setup:
-echo   URL:    https://%FUNCTION_APP_NAME%.azurewebsites.net/api/trade
-echo   Header: X-Webhook-Token: test-live-token-2025
+echo   URL:    !ENDPOINT!
+echo   Header: X-Webhook-Token: !WEBHOOK_AUTH_TOKEN!
 echo.
 echo Test it with:
-echo   curl -X POST https://%FUNCTION_APP_NAME%.azurewebsites.net/api/trade ^
+echo   curl -X POST !ENDPOINT! ^
 echo     -H "Content-Type: application/json" ^
-echo     -H "X-Webhook-Token: test-live-token-2025" ^
+echo     -H "X-Webhook-Token: !WEBHOOK_AUTH_TOKEN!" ^
 echo     -d "{\"content\": \"**New Buy Signal:**\nAAPL 5 Min Candle\nStrategy: bollinger_mean_reversion\nMode: stock\nPrice: 189.50\"}"
 echo.
 
 endlocal
+goto :eof
+
+:load_env_var
+set "%~1="
+for /f "usebackq tokens=1* delims==" %%A in (`findstr /B /C:"%~1=" "%ENV_FILE%"`) do (
+    set "%~1=%%B"
+    goto :eof
+)
+goto :eof

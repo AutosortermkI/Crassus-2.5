@@ -29,12 +29,12 @@ fi
 echo "[OK] Azure Functions Core Tools found."
 
 # ------------------------------------------------------------------
-# Configuration — edit these if you want different names
+# Configuration defaults (can be overridden in .env)
 # ------------------------------------------------------------------
-RESOURCE_GROUP="CRG"
-LOCATION="eastus"
-STORAGE_ACCOUNT="crassusstorage25"
-FUNCTION_APP_NAME="crassus-25"
+DEFAULT_RESOURCE_GROUP="CRG"
+DEFAULT_LOCATION="eastus"
+DEFAULT_STORAGE_ACCOUNT="crassusstorage25"
+DEFAULT_FUNCTION_APP_NAME="crassus-25"
 PYTHON_VERSION="3.11"
 
 # ------------------------------------------------------------------
@@ -59,6 +59,17 @@ load_env_var() {
 ALPACA_API_KEY=$(load_env_var "ALPACA_API_KEY")
 ALPACA_SECRET_KEY=$(load_env_var "ALPACA_SECRET_KEY")
 WEBHOOK_AUTH_TOKEN=$(load_env_var "WEBHOOK_AUTH_TOKEN")
+RESOURCE_GROUP=$(load_env_var "AZURE_RESOURCE_GROUP")
+LOCATION=$(load_env_var "AZURE_LOCATION")
+STORAGE_ACCOUNT=$(load_env_var "AZURE_STORAGE_ACCOUNT")
+FUNCTION_APP_NAME=$(load_env_var "AZURE_FUNCTION_APP_NAME")
+FUNCTION_BASE_URL=$(load_env_var "AZURE_FUNCTION_BASE_URL")
+
+RESOURCE_GROUP=${RESOURCE_GROUP:-$DEFAULT_RESOURCE_GROUP}
+LOCATION=${LOCATION:-$DEFAULT_LOCATION}
+STORAGE_ACCOUNT=${STORAGE_ACCOUNT:-$DEFAULT_STORAGE_ACCOUNT}
+FUNCTION_APP_NAME=${FUNCTION_APP_NAME:-$DEFAULT_FUNCTION_APP_NAME}
+FUNCTION_BASE_URL=${FUNCTION_BASE_URL:-"https://${FUNCTION_APP_NAME}.azurewebsites.net"}
 
 if [ -z "$ALPACA_API_KEY" ] || [ -z "$ALPACA_SECRET_KEY" ]; then
     echo "[ERROR] ALPACA_API_KEY and ALPACA_SECRET_KEY must be set in .env"
@@ -190,7 +201,12 @@ echo "[OK] Deployment complete."
 # ------------------------------------------------------------------
 # Done — show the endpoint
 # ------------------------------------------------------------------
-ENDPOINT="https://${FUNCTION_APP_NAME}.azurewebsites.net/api/trade"
+FUNCTION_BASE_URL=${FUNCTION_BASE_URL%/}
+if [[ "$FUNCTION_BASE_URL" == */api/trade ]]; then
+    ENDPOINT="$FUNCTION_BASE_URL"
+else
+    ENDPOINT="${FUNCTION_BASE_URL}/api/trade"
+fi
 echo
 echo "===================================="
 echo "  Deployment complete!"

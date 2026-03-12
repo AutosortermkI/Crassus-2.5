@@ -12,7 +12,7 @@ cd Crassus-2.5
 ./run_dashboard.sh        # macOS / Linux
 ```
 
-That's it. The script auto-creates a virtual environment, installs all dependencies, and launches the dashboard at `http://localhost:5050`. On first launch you'll see a **credential setup screen** — enter your [Alpaca](https://app.alpaca.markets) API key and secret to get started.
+That's it. The script auto-creates a virtual environment, installs the dashboard dependencies, and launches the UI at `http://localhost:5050`. On first launch you can wire in your Alpaca API key and secret, review the shared TradingView webhook URL, and confirm webhook activity is flowing through the shared Azure function.
 
 **Windows:** Use `run_dashboard.bat` instead.
 
@@ -20,10 +20,10 @@ That's it. The script auto-creates a virtual environment, installs all dependenc
 
 | Command | What it does |
 |---|---|
-| `./setup.sh` | Full interactive setup (venv, deps, credential prompts, `.env` generation) |
+| `./setup.sh` | Full interactive setup (venv, deps, prompts for Alpaca/webhook/dashboard access, `.env` generation) |
 | `./run_dashboard.sh` | Launch the dashboard GUI (auto-installs deps if needed) |
 | `./run_crassus.sh` | Run the Azure Function locally (`http://localhost:7071/api/trade`) |
-| `./run_tests.sh` | Run the test suite (229 unit tests) |
+| `./run_tests.sh` | Run the automated test suite (`233` tests, manual live Alpaca check excluded) |
 | `./deploy_azure.sh` | Deploy to Azure (creates resource group, storage, Function App, pushes code) |
 
 All scripts have `.bat` equivalents for Windows.
@@ -34,12 +34,13 @@ All scripts have `.bat` equivalents for Windows.
 
 The web dashboard (`http://localhost:5050`) provides:
 
-- **Credential setup gate** — blocks the UI until valid Alpaca API keys are entered and verified. Keys are saved to `.env` automatically.
-- **Portfolio overview** — equity, buying power, cash, daily P&L (auto-refreshes every 30s).
-- **Open positions** — live positions with unrealized P&L.
-- **Recent orders** — last 20 orders with status, fill price, timestamps.
-- **TradingView webhook widget** — copy-paste webhook URL, auth token, and alert message templates directly into TradingView. Includes a "Send Test Webhook" button.
-- **Trading parameters** — edit all strategy percentages, risk limits, and screening criteria with live save to `.env`.
+- **Optional shared access password** — protect the dashboard itself when you are hosting it for partners.
+- **TradingView inbox** — copy the shared webhook URL, copy the tokenized URL, generate a new webhook token, and send a test alert.
+- **Latest webhook snapshot** — inspect the raw payload, parsed fields, and forward/execution result for the most recent TradingView alert.
+- **Active Webhooks sidebar** — see grouped, recently active alert signatures so partners can confirm what is currently firing.
+- **Recent Alerts table** — audit the latest webhook traffic without digging through Azure logs.
+- **Optional broker panels** — add Alpaca credentials only if you want portfolio, positions, and order history under the webhook monitor.
+- **Trading parameters and Azure metadata** — edit strategy settings, webhook retention, and shared Azure naming from the same page.
 
 ---
 
@@ -49,15 +50,15 @@ The dashboard's webhook widget gives you everything you need, but here's the man
 
 1. **Get your webhook URL:**
    - Local: `http://localhost:7071/api/trade`
-   - Azure: `https://crassus-25.azurewebsites.net/api/trade` (after deploying)
+   - Azure: use the URL shown by the dashboard, which is derived from `AZURE_FUNCTION_BASE_URL` or `AZURE_FUNCTION_APP_NAME`
 
 2. **In TradingView**, create or edit an alert on your indicator/strategy.
 
 3. **Under Notifications**, enable **Webhook URL** and paste the URL.
 
-4. **Authenticate** — choose one method:
+4. **Authenticate the webhook** — choose one method:
    - **Option A (query parameter):** Append `?token=YOUR_TOKEN` to the webhook URL, e.g.
-     `https://crassus-25.azurewebsites.net/api/trade?token=your-secret-token`
+     `https://your-function.azurewebsites.net/api/trade?token=your-secret-token`
    - **Option B (custom header):** If your TradingView plan supports custom headers, add `X-Webhook-Token: YOUR_TOKEN` as a header.
 
 5. **Set the alert message** to one of these templates:
@@ -228,9 +229,9 @@ All percentages are configurable via environment variables or the dashboard UI.
 
 The backtesting engine replays historical price data through the **exact same strategy logic** used in live trading — same `get_strategy()` lookup, same `compute_stock_bracket_prices()` math, same `compute_options_exit_prices()` targets, same `compute_options_qty()` risk sizing. The only difference is that orders go to a simulated broker instead of Alpaca.
 
-### Dashboard (no code needed)
+### Dashboard status
 
-The dashboard at `http://localhost:5050` includes a **Backtesting** section. Pick a ticker, date range, strategy, and click **Run Backtest**. The system automatically fetches historical bars from Yahoo Finance, generates signals, runs the backtest, and displays results with an equity curve, key metrics, and a trade-by-trade table — all in the browser.
+The dashboard is now focused on the live webhook workflow rather than browser-based backtesting. Use the Python and CLI entry points below for historical replay work, and use the dashboard for shared webhook monitoring, routing, and broker visibility.
 
 ### Quick start (Python)
 
@@ -534,10 +535,10 @@ This script:
 
 | Azure Resource | Name | Purpose |
 |---|---|---|
-| Resource Group | `CRG` | Container for all resources |
-| Storage Account | `crassusstorage25` | Required by Azure Functions |
-| Function App | `crassus-25` | Hosts the trading function (Linux, Python 3.11, Consumption plan) |
-| Application Insights | `crassus-25` | Logging and monitoring |
+| Resource Group | `CRG` by default | Container for all resources |
+| Storage Account | `crassusstorage25` by default | Required by Azure Functions |
+| Function App | `crassus-25` by default | Hosts the trading function (Linux, Python 3.11, Consumption plan) |
+| Application Insights | Matches the Function App by default | Logging and monitoring |
 
 ### Functions
 
@@ -548,12 +549,13 @@ This script:
 
 ### Customizing resource names
 
-Edit the top of `deploy_azure.sh`:
+Set these values in `.env` before running `./deploy_azure.sh`:
 ```bash
-RESOURCE_GROUP="CRG"
-LOCATION="eastus"
-STORAGE_ACCOUNT="crassusstorage25"
-FUNCTION_APP_NAME="crassus-25"
+AZURE_RESOURCE_GROUP="CRG"
+AZURE_LOCATION="eastus"
+AZURE_STORAGE_ACCOUNT="crassusstorage25"
+AZURE_FUNCTION_APP_NAME="crassus-25"
+AZURE_FUNCTION_BASE_URL="https://crassus-25.azurewebsites.net"
 ```
 
 ---
@@ -718,15 +720,15 @@ If you prefer to set things up manually instead of using the scripts:
 
 5. **Run tests**
    ```bash
-   pip install pytest
-   python -m pytest tests/ -v
+   ./run_tests.sh
    ```
+   For the real broker smoke test, run `python tests/test_live_alpaca.py` separately with paper-trading credentials.
 
 6. **Deploy to Azure**
    ```bash
    ./deploy_azure.sh
    ```
-   Or manually: `cd function_app && func azure functionapp publish crassus-25 --python`
+   Or manually: `cd function_app && func azure functionapp publish "$AZURE_FUNCTION_APP_NAME" --python`
 
 ---
 
