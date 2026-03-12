@@ -1,14 +1,15 @@
 """
 Crassus 2.5 -- Dashboard Flask application.
 
-Local web UI for configuring trading parameters and viewing
-Alpaca portfolio data.
+Web UI for configuring webhook routing, reviewing shared TradingView
+activity, and optionally monitoring Alpaca portfolio data.
 
 Usage:
     python dashboard/app.py
     -> Opens http://localhost:5050 in the default browser
 """
 
+import os
 import webbrowser
 import threading
 import json
@@ -16,9 +17,11 @@ import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 import requests as http_requests
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, jsonify, redirect, render_template, request, session, url_for
+from werkzeug.security import check_password_hash
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 FUNCTION_APP_DIR = ROOT_DIR / "function_app"
@@ -27,8 +30,8 @@ if str(FUNCTION_APP_DIR) not in sys.path:
 
 from config_manager import (
     get_config, save_config, save_credentials, read_env, SECRET_KEYS,
-    sync_settings_to_azure, azure_cli_available,
-    ensure_webhook_token,
+    ensure_dashboard_session_secret, ensure_webhook_token, get_azure_function_activity_url,
+    get_azure_function_trade_url, sync_settings_to_azure,
 )
 from alpaca_client import (
     get_account_summary, get_positions, get_recent_orders,
@@ -38,6 +41,11 @@ from webhook_store import build_signature, clear_events, get_activity_snapshot, 
 from parser import ParseError, parse_webhook_payload
 
 app = Flask(__name__)
+app.secret_key = ensure_dashboard_session_secret()
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+)
 
 
 def _utcnow_iso() -> str:
@@ -46,6 +54,41 @@ def _utcnow_iso() -> str:
 
 def _dashboard_receive_url() -> str:
     return request.host_url.rstrip("/") + "/api/webhook/receive"
+
+
+def _dashboard_access_passwords() -> tuple[str, str]:
+    env = read_env()
+    return (
+        (env.get("DASHBOARD_ACCESS_PASSWORD") or "").strip(),
+        (env.get("DASHBOARD_ACCESS_PASSWORD_HASH") or "").strip(),
+    )
+
+
+def _dashboard_auth_enabled() -> bool:
+    password, password_hash = _dashboard_access_passwords()
+    return bool(password or password_hash)
+
+
+def _dashboard_is_authenticated() -> bool:
+    return session.get("dashboard_authenticated") is True
+
+
+def _is_api_request() -> bool:
+    return request.path.startswith("/api/")
+
+
+def _verify_dashboard_password(candidate: str) -> bool:
+    password, password_hash = _dashboard_access_passwords()
+    if password_hash:
+        return check_password_hash(password_hash, candidate)
+    return bool(password) and candidate == password
+
+
+def _login_redirect_target() -> str:
+    next_url = (request.args.get("next") or "").strip()
+    if next_url.startswith("/") and not next_url.startswith("//"):
+        return next_url
+    return "/"
 
 
 def _forwarding_target() -> tuple[str, str]:
@@ -58,7 +101,7 @@ def _forwarding_target() -> tuple[str, str]:
     if target == "custom":
         return target, custom_url
     if target == "azure":
-        return target, "https://crassus-25.azurewebsites.net/api/trade"
+        return target, get_azure_function_trade_url(env)
     return "local", "http://localhost:7071/api/trade"
 
 
@@ -73,6 +116,8 @@ def _activity_endpoint_url() -> str:
     target, url = _forwarding_target()
     if target == "none":
         return ""
+    if target == "azure":
+        return get_azure_function_activity_url(read_env())
     if url.endswith("/trade"):
         return url[:-6] + "/webhook-activity"
     return ""
@@ -91,7 +136,7 @@ def _webhook_store_limits() -> tuple[int, int]:
     return max(1, active_minutes), max(1, max_snapshots)
 
 
-def _forward_webhook(payload: dict, token: str, parsed: dict | None) -> dict:
+def _forward_webhook(payload: dict, token: str, parsed: Optional[dict]) -> dict:
     """Forward a stored webhook to the configured execution endpoint."""
     target, url = _forwarding_target()
     result = {
@@ -174,14 +219,66 @@ def _capture_webhook(payload: dict, source: str) -> dict:
     return record_event(event, max_snapshots=max_snapshots)
 
 
+@app.before_request
+def require_dashboard_login():
+    """Gate dashboard routes behind a shared access password when configured."""
+    if not _dashboard_auth_enabled():
+        return None
+
+    if request.endpoint in {"login", "logout", "static", "api_webhook_receive"}:
+        return None
+
+    if _dashboard_is_authenticated():
+        return None
+
+    if _is_api_request():
+        return jsonify({
+            "status": "unauthorized",
+            "message": "Dashboard login required.",
+        }), 401
+
+    return redirect(url_for("login", next=request.full_path if request.query_string else request.path))
+
+
 # ======================================================================
 # Page routes
 # ======================================================================
 
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    """Authenticate a shared partner session for the dashboard."""
+    if not _dashboard_auth_enabled():
+        return redirect("/")
+
+    error = None
+    if request.method == "POST":
+        password = (request.form.get("password") or "").strip()
+        next_url = (request.form.get("next") or "").strip()
+        if _verify_dashboard_password(password):
+            session["dashboard_authenticated"] = True
+            if next_url.startswith("/") and not next_url.startswith("//"):
+                return redirect(next_url)
+            return redirect("/")
+        error = "Incorrect dashboard password."
+
+    return render_template(
+        "login.html",
+        error=error,
+        next_url=_login_redirect_target(),
+    )
+
+
+@app.route("/logout", methods=["POST"])
+def logout():
+    """Clear the dashboard login session."""
+    session.clear()
+    return redirect(url_for("login"))
+
+
 @app.route("/")
 def index():
     """Serve the single-page dashboard."""
-    return render_template("index.html")
+    return render_template("index.html", dashboard_auth_enabled=_dashboard_auth_enabled())
 
 
 # ======================================================================
@@ -506,14 +603,17 @@ def api_webhook_test():
 
 def open_browser():
     """Open the dashboard in the default browser after a short delay."""
-    webbrowser.open("http://localhost:5050")
+    port = int(os.environ.get("PORT", "5050"))
+    webbrowser.open(f"http://localhost:{port}")
 
 
 if __name__ == "__main__":
+    port = int(os.environ.get("PORT", "5050"))
+
     # Open browser after Flask starts
     threading.Timer(1.5, open_browser).start()
     print("=" * 50)
     print("  Crassus 2.5 Dashboard")
-    print("  http://localhost:5050")
+    print(f"  http://localhost:{port}")
     print("=" * 50)
-    app.run(host="127.0.0.1", port=5050, debug=False)
+    app.run(host="127.0.0.1", port=port, debug=False)

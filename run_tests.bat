@@ -11,4 +11,10 @@ if not exist ".venv" (
     call .venv\Scripts\activate
 )
 
-python -m pytest tests/ -v
+python -c "import scipy, pytest" >nul 2>&1
+if %ERRORLEVEL% neq 0 (
+    pip install -r function_app\requirements.txt --quiet
+    pip install pytest --quiet
+)
+
+python -m pytest -v

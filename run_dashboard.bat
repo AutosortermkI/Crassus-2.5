@@ -6,11 +6,15 @@ if not exist ".venv" (
     echo Creating venv...
     python -m venv .venv
     call .venv\Scripts\activate
-    pip install -r function_app\requirements.txt --quiet
-    pip install flask python-dotenv alpaca-py requests --quiet
+    pip install -r requirements-dashboard.txt --quiet
     echo Setup complete.
 ) else (
     call .venv\Scripts\activate
+)
+
+python -c "import flask, requests, alpaca" >nul 2>&1
+if %ERRORLEVEL% neq 0 (
+    pip install -r requirements-dashboard.txt --quiet
 )
 
 python dashboard\app.py

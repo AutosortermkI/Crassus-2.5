@@ -50,6 +50,16 @@
             letter-spacing: 0.02em;
         }
 
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logout-form {
+            margin: 0;
+        }
+
         .badge {
             padding: 7px 14px;
             border-radius: 999px;
@@ -577,6 +587,11 @@
                 gap: 10px;
             }
 
+            .header-actions {
+                width: 100%;
+                justify-content: space-between;
+            }
+
             .container {
                 padding: 18px 14px 28px;
             }
@@ -597,7 +612,14 @@
 
 <div class="header">
     <h1>Crassus 2.5</h1>
-    <span id="tradingBadge" class="badge badge-neutral">Webhook Ready</span>
+    <div class="header-actions">
+        <span id="tradingBadge" class="badge badge-neutral">Webhook Ready</span>
+        {% if dashboard_auth_enabled %}
+        <form class="logout-form" method="post" action="/logout">
+            <button class="btn btn-secondary" type="submit">Log Out</button>
+        </form>
+        {% endif %}
+    </div>
 </div>
 
 <div class="container">

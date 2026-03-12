@@ -58,7 +58,7 @@ pip install -r function_app/requirements.txt --quiet
 echo "[OK] Function dependencies installed."
 
 echo "Installing dashboard dependencies..."
-pip install flask python-dotenv alpaca-py --quiet
+pip install -r requirements-dashboard.txt --quiet
 echo "[OK] Dashboard dependencies installed."
 
 echo "Installing test dependencies..."
@@ -94,6 +94,11 @@ if [ -z "$WEBHOOK_TOKEN" ]; then
     echo "[OK] Auto-generated webhook token: $WEBHOOK_TOKEN"
 fi
 
+read -rsp "Enter a dashboard access password (recommended for shared hosting; press Enter to leave unset): " DASHBOARD_ACCESS_PASSWORD
+echo
+
+DASHBOARD_SESSION_SECRET=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
+
 # ------------------------------------------------------------------
 # Generate .env
 # ------------------------------------------------------------------
@@ -111,6 +116,17 @@ ALPACA_SECRET_KEY=$ALPACA_SECRET
 WEBHOOK_AUTH_TOKEN=$WEBHOOK_TOKEN
 ALPACA_PAPER=true
 DEFAULT_STOCK_QTY=1
+WEBHOOK_FORWARD_TARGET=azure
+WEBHOOK_ACTIVE_MINUTES=60
+WEBHOOK_MAX_SNAPSHOTS=50
+AZURE_FUNCTION_APP_NAME=crassus-25
+AZURE_FUNCTION_BASE_URL=
+AZURE_RESOURCE_GROUP=CRG
+AZURE_LOCATION=eastus
+AZURE_STORAGE_ACCOUNT=crassusstorage25
+AZURE_DASHBOARD_APP_NAME=
+DASHBOARD_ACCESS_PASSWORD=$DASHBOARD_ACCESS_PASSWORD
+DASHBOARD_SESSION_SECRET=$DASHBOARD_SESSION_SECRET
 
 # Strategy: bollinger_mean_reversion
 BMR_STOCK_TP_PCT=0.2
