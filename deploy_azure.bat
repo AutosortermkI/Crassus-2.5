@@ -248,7 +248,7 @@ echo Pushing Dashboard Web App settings from .env...
 az webapp config appsettings set ^
     --name !AZURE_DASHBOARD_APP_NAME! ^
     --resource-group !AZURE_RESOURCE_GROUP! ^
-    --settings !SETTINGS! AZURE_SUBSCRIPTION_ID=!AZURE_SUBSCRIPTION_ID! SCM_DO_BUILD_DURING_DEPLOYMENT=true ENABLE_ORYX_BUILD=true ^
+    --settings !SETTINGS! AZURE_SUBSCRIPTION_ID=!AZURE_SUBSCRIPTION_ID! SCM_DO_BUILD_DURING_DEPLOYMENT=true ENABLE_ORYX_BUILD=true WEBSITES_PORT=8000 WEBSITE_WARMUP_PATH=/login ^
     --output none
 if %ERRORLEVEL% neq 0 (
     echo [ERROR] Failed to configure Dashboard app settings.
