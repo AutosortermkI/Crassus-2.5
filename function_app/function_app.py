@@ -17,6 +17,7 @@ Endpoint: ``POST /api/trade``
 import os
 import json
 import logging
+from datetime import datetime, timezone
 from typing import Optional
 
 import azure.functions as func

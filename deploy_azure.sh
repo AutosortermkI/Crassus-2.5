@@ -296,6 +296,8 @@ az webapp config appsettings set \
         "AZURE_SUBSCRIPTION_ID=$SUBSCRIPTION_ID" \
         "SCM_DO_BUILD_DURING_DEPLOYMENT=true" \
         "ENABLE_ORYX_BUILD=true" \
+        "WEBSITES_PORT=8000" \
+        "WEBSITE_WARMUP_PATH=/login" \
     --output none
 echo "[OK] Dashboard app settings configured."
 
