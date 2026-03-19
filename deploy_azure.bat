@@ -42,6 +42,9 @@ set DEFAULT_FUNCTION_APP_NAME=crassus-25
 set DEFAULT_DASHBOARD_SKU=B1
 set PYTHON_VERSION=3.11
 set DASHBOARD_STARTUP_COMMAND=gunicorn --bind=0.0.0.0:${PORT:-8000} --timeout 600 dashboard_wsgi:app
+set DASHBOARD_DEPLOYMENT_POLL_SECONDS=5
+set DASHBOARD_DEPLOYMENT_WAIT_ATTEMPTS=180
+set DASHBOARD_HEALTH_WAIT_ATTEMPTS=120
 
 set SCRIPT_DIR=%~dp0
 set ENV_FILE=%SCRIPT_DIR%.env
@@ -345,14 +348,29 @@ if %ERRORLEVEL% neq 0 (
 echo [OK] Dashboard package created.
 
 echo Deploying Dashboard Web App code...
+call :get_latest_dashboard_deployment_id
+set PREVIOUS_DASHBOARD_DEPLOYMENT_ID=!LATEST_DASHBOARD_DEPLOYMENT_ID!
 az webapp deploy ^
     --resource-group !AZURE_RESOURCE_GROUP! ^
     --name !AZURE_DASHBOARD_APP_NAME! ^
     --src-path "%DASHBOARD_PACKAGE%" ^
     --type zip ^
+    --async true ^
+    --track-status false ^
     --output none
 if %ERRORLEVEL% neq 0 (
     echo [ERROR] Dashboard Web App deployment failed.
+    rmdir /s /q "%TMP_DIR%" >nul 2>&1
+    exit /b 1
+)
+call :wait_for_dashboard_deployment "!PREVIOUS_DASHBOARD_DEPLOYMENT_ID!"
+if %ERRORLEVEL% neq 0 (
+    rmdir /s /q "%TMP_DIR%" >nul 2>&1
+    exit /b 1
+)
+set DASHBOARD_URL=https://!AZURE_DASHBOARD_APP_NAME!.azurewebsites.net
+call :wait_for_dashboard_health "!DASHBOARD_URL!/login"
+if %ERRORLEVEL% neq 0 (
     rmdir /s /q "%TMP_DIR%" >nul 2>&1
     exit /b 1
 )
@@ -366,7 +384,6 @@ if /I "!AZURE_FUNCTION_BASE_URL:~-10!"=="/api/trade" (
     if "!FUNCTION_BASE:~-1!"=="/" set FUNCTION_BASE=!FUNCTION_BASE:~0,-1!
     set WEBHOOK_ENDPOINT=!FUNCTION_BASE!/api/trade
 )
-set DASHBOARD_URL=https://!AZURE_DASHBOARD_APP_NAME!.azurewebsites.net
 
 echo.
 echo ====================================
@@ -388,6 +405,79 @@ echo.
 
 endlocal
 goto :eof
+
+:get_latest_dashboard_deployment_id
+set LATEST_DASHBOARD_DEPLOYMENT_ID=
+for /f "delims=" %%s in ('az webapp log deployment list --name !AZURE_DASHBOARD_APP_NAME! --resource-group !AZURE_RESOURCE_GROUP! --query "sort_by(@, &received_time)[-1].id" -o tsv 2^>nul') do set LATEST_DASHBOARD_DEPLOYMENT_ID=%%s
+if /I "!LATEST_DASHBOARD_DEPLOYMENT_ID!"=="None" set LATEST_DASHBOARD_DEPLOYMENT_ID=
+exit /b 0
+
+:get_dashboard_deployment_field
+set "%~3="
+for /f "delims=" %%s in ('az webapp log deployment list --name !AZURE_DASHBOARD_APP_NAME! --resource-group !AZURE_RESOURCE_GROUP! --query "[?id=='%~1'] | [0].%~2" -o tsv 2^>nul') do set "%~3=%%s"
+if /I "!%~3!"=="None" set "%~3="
+exit /b 0
+
+:wait_for_dashboard_deployment
+set PREVIOUS_DASHBOARD_DEPLOYMENT_ID=%~1
+set DASHBOARD_DEPLOYMENT_ID=
+set /a DASHBOARD_DEPLOYMENT_ATTEMPT=0
+echo Waiting for Azure to register the dashboard deployment...
+:wait_for_dashboard_deployment_id_loop
+set /a DASHBOARD_DEPLOYMENT_ATTEMPT+=1
+call :get_latest_dashboard_deployment_id
+if defined LATEST_DASHBOARD_DEPLOYMENT_ID if /I not "!LATEST_DASHBOARD_DEPLOYMENT_ID!"=="!PREVIOUS_DASHBOARD_DEPLOYMENT_ID!" (
+    set DASHBOARD_DEPLOYMENT_ID=!LATEST_DASHBOARD_DEPLOYMENT_ID!
+    echo [OK] Azure accepted dashboard deployment: !DASHBOARD_DEPLOYMENT_ID!
+    goto wait_for_dashboard_deployment_status_loop
+)
+if !DASHBOARD_DEPLOYMENT_ATTEMPT! geq !DASHBOARD_DEPLOYMENT_WAIT_ATTEMPTS! (
+    echo [ERROR] Timed out waiting for Azure to register dashboard deployment.
+    exit /b 1
+)
+timeout /t !DASHBOARD_DEPLOYMENT_POLL_SECONDS! /nobreak >nul
+goto wait_for_dashboard_deployment_id_loop
+
+:wait_for_dashboard_deployment_status_loop
+set /a DASHBOARD_DEPLOYMENT_ATTEMPT=0
+echo Waiting for Azure deployment record to complete...
+:wait_for_dashboard_deployment_status_poll
+set /a DASHBOARD_DEPLOYMENT_ATTEMPT+=1
+call :get_dashboard_deployment_field "!DASHBOARD_DEPLOYMENT_ID!" complete DASHBOARD_DEPLOYMENT_COMPLETE
+call :get_dashboard_deployment_field "!DASHBOARD_DEPLOYMENT_ID!" status DASHBOARD_DEPLOYMENT_STATUS
+if /I "!DASHBOARD_DEPLOYMENT_COMPLETE!"=="true" (
+    if "!DASHBOARD_DEPLOYMENT_STATUS!"=="4" (
+        echo [OK] Dashboard deployment record completed successfully.
+        exit /b 0
+    )
+    echo [ERROR] Dashboard deployment failed with Azure status !DASHBOARD_DEPLOYMENT_STATUS!.
+    exit /b 1
+)
+if !DASHBOARD_DEPLOYMENT_ATTEMPT! geq !DASHBOARD_DEPLOYMENT_WAIT_ATTEMPTS! (
+    echo [ERROR] Timed out waiting for dashboard deployment to finish.
+    exit /b 1
+)
+timeout /t !DASHBOARD_DEPLOYMENT_POLL_SECONDS! /nobreak >nul
+goto wait_for_dashboard_deployment_status_poll
+
+:wait_for_dashboard_health
+set DASHBOARD_HEALTH_URL=%~1
+set /a DASHBOARD_HEALTH_ATTEMPT=0
+echo Waiting for dashboard to answer at !DASHBOARD_HEALTH_URL! ...
+:wait_for_dashboard_health_loop
+set /a DASHBOARD_HEALTH_ATTEMPT+=1
+set DASHBOARD_HEALTH_STATUS=
+for /f "delims=" %%s in ('powershell -NoProfile -Command "$ProgressPreference = ''SilentlyContinue''; try { $response = Invoke-WebRequest -Uri ''!DASHBOARD_HEALTH_URL!'' -UseBasicParsing -TimeoutSec 15; [Console]::Write($response.StatusCode) } catch { if ($_.Exception.Response) { [Console]::Write([int]$_.Exception.Response.StatusCode) } else { [Console]::Write(''000'') } }"') do set DASHBOARD_HEALTH_STATUS=%%s
+if "!DASHBOARD_HEALTH_STATUS!"=="200" (
+    echo [OK] Dashboard responded with HTTP 200.
+    exit /b 0
+)
+if !DASHBOARD_HEALTH_ATTEMPT! geq !DASHBOARD_HEALTH_WAIT_ATTEMPTS! (
+    echo [ERROR] Dashboard did not become healthy at !DASHBOARD_HEALTH_URL!.
+    exit /b 1
+)
+timeout /t !DASHBOARD_DEPLOYMENT_POLL_SECONDS! /nobreak >nul
+goto wait_for_dashboard_health_loop
 
 :load_env_var
 set "%~1="

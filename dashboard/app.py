@@ -15,7 +15,7 @@ import threading
 import json
 import sys
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -42,9 +42,13 @@ from parser import ParseError, parse_webhook_payload
 
 app = Flask(__name__)
 app.secret_key = ensure_dashboard_session_secret()
+_HOSTED_DASHBOARD = bool(os.environ.get("WEBSITE_SITE_NAME"))
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=_HOSTED_DASHBOARD,
+    SESSION_COOKIE_NAME="crassus_dashboard_session",
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=12),
 )
 
 
@@ -255,6 +259,7 @@ def login():
         password = (request.form.get("password") or "").strip()
         next_url = (request.form.get("next") or "").strip()
         if _verify_dashboard_password(password):
+            session.permanent = True
             session["dashboard_authenticated"] = True
             if next_url.startswith("/") and not next_url.startswith("//"):
                 return redirect(next_url)

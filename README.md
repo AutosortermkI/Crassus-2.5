@@ -23,8 +23,8 @@ That's it. The script auto-creates a virtual environment, installs the dashboard
 | `./setup.sh` | Full interactive setup (venv, deps, prompts for Alpaca/webhook/dashboard access, `.env` generation) |
 | `./run_dashboard.sh` | Launch the dashboard GUI (auto-installs deps if needed) |
 | `./run_crassus.sh` | Run the Azure Function locally (`http://localhost:7071/api/trade`) |
-| `./run_tests.sh` | Run the automated test suite (`233` tests, manual live Alpaca check excluded) |
-| `./deploy_azure.sh` | Deploy to Azure (creates resource group, storage, Function App, pushes code) |
+| `./run_tests.sh` | Run the automated test suite (`241` tests, manual live Alpaca check excluded) |
+| `./deploy_azure.sh` | Deploy to Azure with a hosted dashboard and Key Vault-backed secrets |
 
 All scripts have `.bat` equivalents for Windows.
 
@@ -522,9 +522,9 @@ When Yahoo Finance is enabled (default), the screener:
 This script:
 1. Validates Azure CLI and Functions Core Tools are installed
 2. Reads all credentials and settings from `.env` (no hardcoded secrets)
-3. Creates or updates: resource group, storage account, Function App, App Service plan, and hosted dashboard Web App
-4. Pushes all `.env` settings as Azure Application Settings for both the trading backend and the hosted dashboard
-5. Enables a managed identity on the dashboard so GUI-based setting changes can sync Azure app settings after deployment
+3. Creates or updates: resource group, storage account, Function App, App Service plan, hosted dashboard Web App, and Azure Key Vault
+4. Stores hosted secrets in Azure Key Vault and pushes Key Vault references into the Function App and dashboard App Settings
+5. Enables managed identities on the Function App and dashboard so GUI-based setting changes can sync Azure app settings and hosted secrets safely
 6. Deploys the function code with `func azure functionapp publish`
 7. Deploys the dashboard code to Azure App Service and prints both shared URLs
 
@@ -543,6 +543,7 @@ This script:
 | Function App | `crassus-25` by default | Hosts the trading function (Linux, Python 3.11, Consumption plan) |
 | Dashboard App Service Plan | Derived from the dashboard app name by default | Hosts the shared Flask dashboard |
 | Dashboard Web App | Derived from the function app name by default | Shared partner-facing dashboard UI |
+| Azure Key Vault | Derived from the storage account name by default | Stores hosted secrets and password hashes |
 | Application Insights | Matches the Function App by default | Logging and monitoring |
 
 ### Functions
@@ -565,6 +566,9 @@ AZURE_SUBSCRIPTION_ID=""
 AZURE_DASHBOARD_APP_NAME="crassus-25-dashboard"
 AZURE_DASHBOARD_PLAN_NAME="crassus-25-dashboard-plan"
 AZURE_DASHBOARD_SKU="B1"
+AZURE_USE_KEY_VAULT="true"
+AZURE_KEY_VAULT_NAME=""
+AZURE_KEY_VAULT_SECRET_PREFIX=""
 ```
 
 ---
@@ -591,6 +595,9 @@ All variables are configurable via the dashboard UI or directly in `.env`.
 | `AZURE_DASHBOARD_APP_NAME` | Derived from function app name | Shared Azure Web App that serves the dashboard |
 | `AZURE_DASHBOARD_PLAN_NAME` | Derived from dashboard app name | App Service plan for the hosted dashboard |
 | `AZURE_DASHBOARD_SKU` | `B1` | App Service SKU used when deploying the hosted dashboard |
+| `AZURE_USE_KEY_VAULT` | `true` | Store hosted secrets in Azure Key Vault and sync app settings as Key Vault references |
+| `AZURE_KEY_VAULT_NAME` | Derived from storage account | Azure Key Vault used for hosted secrets |
+| `AZURE_KEY_VAULT_SECRET_PREFIX` | Function app name | Prefix applied to Key Vault secret names |
 
 ### Strategy: bollinger_mean_reversion (prefix `BMR_`)
 
