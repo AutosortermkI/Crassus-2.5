@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import logging
 import secrets
+import hashlib
 from pathlib import Path
 from collections import OrderedDict
 from typing import List, Optional
@@ -18,12 +19,20 @@ logger = logging.getLogger(__name__)
 
 try:
     from azure.identity import DefaultAzureCredential
+except ImportError:  # pragma: no cover - depends on optional dashboard deps
+    DefaultAzureCredential = None
+try:
     from azure.mgmt.web import WebSiteManagementClient
     _AZURE_MANAGEMENT_AVAILABLE = True
 except ImportError:  # pragma: no cover - depends on optional dashboard deps
-    DefaultAzureCredential = None
     WebSiteManagementClient = None
     _AZURE_MANAGEMENT_AVAILABLE = False
+try:
+    from azure.keyvault.secrets import SecretClient
+    _AZURE_KEY_VAULT_AVAILABLE = True
+except ImportError:  # pragma: no cover - depends on optional dashboard deps
+    SecretClient = None
+    _AZURE_KEY_VAULT_AVAILABLE = False
 
 # Path to the .env file (repo root)
 ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
@@ -38,7 +47,12 @@ AZURE_DEFAULTS = {
     "AZURE_DASHBOARD_APP_NAME": "",
     "AZURE_DASHBOARD_PLAN_NAME": "",
     "AZURE_DASHBOARD_SKU": "B1",
+    "AZURE_USE_KEY_VAULT": "true",
+    "AZURE_KEY_VAULT_NAME": "",
+    "AZURE_KEY_VAULT_SECRET_PREFIX": "",
 }
+
+TRUE_VALUES = {"1", "true", "yes", "on"}
 
 # ---------------------------------------------------------------------------
 # Parameter definitions with metadata for the dashboard UI
@@ -150,6 +164,27 @@ PARAM_DEFINITIONS = OrderedDict([
         "type": "text",
         "default": AZURE_DEFAULTS["AZURE_DASHBOARD_SKU"],
         "description": "App Service SKU used when deploying the hosted dashboard",
+    }),
+    ("AZURE_USE_KEY_VAULT", {
+        "label": "Use Azure Key Vault",
+        "group": "Azure Deployment",
+        "type": "bool",
+        "default": AZURE_DEFAULTS["AZURE_USE_KEY_VAULT"],
+        "description": "Store hosted secrets in Azure Key Vault and sync app settings as Key Vault references",
+    }),
+    ("AZURE_KEY_VAULT_NAME", {
+        "label": "Key Vault Name",
+        "group": "Azure Deployment",
+        "type": "text",
+        "default": AZURE_DEFAULTS["AZURE_KEY_VAULT_NAME"],
+        "description": "Optional Key Vault name for hosted secret storage",
+    }),
+    ("AZURE_KEY_VAULT_SECRET_PREFIX", {
+        "label": "Key Vault Secret Prefix",
+        "group": "Azure Deployment",
+        "type": "text",
+        "default": AZURE_DEFAULTS["AZURE_KEY_VAULT_SECRET_PREFIX"],
+        "description": "Optional prefix applied to secret names stored in Azure Key Vault",
     }),
 
     # --- Bollinger Mean Reversion ---
@@ -338,6 +373,44 @@ SECRET_KEYS = {
     "DASHBOARD_ACCESS_PASSWORD_HASH",
     "DASHBOARD_SESSION_SECRET",
 }
+
+
+def _is_truthy(value: Optional[str], default: bool = False) -> bool:
+    if value is None:
+        return default
+    return str(value).strip().lower() in TRUE_VALUES
+
+
+def _sanitize_secret_fragment(value: str, fallback: str) -> str:
+    normalized = "".join(
+        ch if ch.isalnum() else "-"
+        for ch in (value or "").strip().lower()
+    )
+    while "--" in normalized:
+        normalized = normalized.replace("--", "-")
+    normalized = normalized.strip("-")
+    return normalized or fallback
+
+
+def default_key_vault_name(storage_account: str) -> str:
+    seed = "".join(ch for ch in (storage_account or "").strip().lower() if ch.isalnum())
+    if not seed:
+        seed = "crassus"
+    if not seed[0].isalpha():
+        seed = f"c{seed}"
+    return f"{seed[:22]}kv"
+
+
+def generate_dashboard_password_hash(password: str) -> str:
+    salt = secrets.token_hex(16)
+    iterations = 600000
+    digest = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        salt.encode("utf-8"),
+        iterations,
+    ).hex()
+    return f"pbkdf2:sha256:{iterations}${salt}${digest}"
 
 
 def _can_persist_local_env() -> bool:
@@ -535,18 +608,22 @@ def ensure_dashboard_session_secret() -> str:
     return secret
 
 
-def get_azure_settings(overrides: Optional[dict] = None) -> dict:
-    """Resolve Azure resource names and URLs from config plus optional updates."""
-    env = read_env()
-    if overrides:
-        env.update({key: str(value) for key, value in overrides.items()})
-
+def _build_azure_settings(env: dict) -> dict:
     function_app_name = (
         env.get("AZURE_FUNCTION_APP_NAME") or AZURE_DEFAULTS["AZURE_FUNCTION_APP_NAME"]
     ).strip()
     function_base_url = (env.get("AZURE_FUNCTION_BASE_URL") or "").strip()
     if not function_base_url:
         function_base_url = f"https://{function_app_name}.azurewebsites.net"
+    storage_account = (
+        env.get("AZURE_STORAGE_ACCOUNT") or AZURE_DEFAULTS["AZURE_STORAGE_ACCOUNT"]
+    ).strip()
+    key_vault_name = (env.get("AZURE_KEY_VAULT_NAME") or "").strip()
+    if not key_vault_name and _is_truthy(env.get("AZURE_USE_KEY_VAULT"), default=True):
+        key_vault_name = default_key_vault_name(storage_account)
+    key_vault_secret_prefix = (
+        env.get("AZURE_KEY_VAULT_SECRET_PREFIX") or function_app_name
+    ).strip()
 
     return {
         "function_app_name": function_app_name,
@@ -556,15 +633,25 @@ def get_azure_settings(overrides: Optional[dict] = None) -> dict:
             env.get("AZURE_RESOURCE_GROUP") or AZURE_DEFAULTS["AZURE_RESOURCE_GROUP"]
         ).strip(),
         "location": (env.get("AZURE_LOCATION") or AZURE_DEFAULTS["AZURE_LOCATION"]).strip(),
-        "storage_account": (
-            env.get("AZURE_STORAGE_ACCOUNT") or AZURE_DEFAULTS["AZURE_STORAGE_ACCOUNT"]
-        ).strip(),
+        "storage_account": storage_account,
         "dashboard_app_name": (env.get("AZURE_DASHBOARD_APP_NAME") or "").strip(),
         "dashboard_plan_name": (env.get("AZURE_DASHBOARD_PLAN_NAME") or "").strip(),
         "dashboard_sku": (
             env.get("AZURE_DASHBOARD_SKU") or AZURE_DEFAULTS["AZURE_DASHBOARD_SKU"]
         ).strip(),
+        "use_key_vault": _is_truthy(env.get("AZURE_USE_KEY_VAULT"), default=True),
+        "key_vault_name": key_vault_name,
+        "key_vault_uri": f"https://{key_vault_name}.vault.azure.net" if key_vault_name else "",
+        "key_vault_secret_prefix": key_vault_secret_prefix,
     }
+
+
+def get_azure_settings(overrides: Optional[dict] = None) -> dict:
+    """Resolve Azure resource names and URLs from config plus optional updates."""
+    env = read_env()
+    if overrides:
+        env.update({key: str(value) for key, value in overrides.items()})
+    return _build_azure_settings(env)
 
 
 def get_azure_function_trade_url(env: Optional[dict] = None) -> str:
@@ -582,6 +669,72 @@ def get_azure_function_activity_url(env: Optional[dict] = None) -> str:
     if trade_url.endswith("/api/trade"):
         return trade_url[:-6] + "/webhook-activity"
     return ""
+
+
+def uses_azure_key_vault(settings: dict) -> bool:
+    return bool(settings.get("use_key_vault") and settings.get("key_vault_name"))
+
+
+def get_key_vault_secret_name(settings: dict, key: str) -> str:
+    prefix = _sanitize_secret_fragment(settings.get("key_vault_secret_prefix", ""), "crassus")
+    suffix = _sanitize_secret_fragment(key, "secret")
+    return f"{prefix}-{suffix}"
+
+
+def get_key_vault_reference(settings: dict, key: str) -> str:
+    secret_name = get_key_vault_secret_name(settings, key)
+    return (
+        "@Microsoft.KeyVault("
+        f"SecretUri={settings['key_vault_uri'].rstrip('/')}/secrets/{secret_name}"
+        ")"
+    )
+
+
+def prepare_azure_app_settings(settings: dict, updates: dict) -> tuple[dict, dict]:
+    """Split Azure sync updates into app settings and Key Vault secrets."""
+    normalized_updates = {k: str(v) for k, v in updates.items()}
+    app_updates = {}
+    secret_updates = {}
+
+    password = normalized_updates.get("DASHBOARD_ACCESS_PASSWORD", "").strip()
+    password_hash = normalized_updates.get("DASHBOARD_ACCESS_PASSWORD_HASH", "").strip()
+    if password and not password_hash:
+        password_hash = generate_dashboard_password_hash(password)
+        normalized_updates["DASHBOARD_ACCESS_PASSWORD_HASH"] = password_hash
+
+    if "DASHBOARD_ACCESS_PASSWORD" in normalized_updates:
+        normalized_updates["DASHBOARD_ACCESS_PASSWORD"] = ""
+
+    for key, value in normalized_updates.items():
+        if key not in SECRET_KEYS:
+            app_updates[key] = value
+            continue
+
+        if key == "DASHBOARD_ACCESS_PASSWORD":
+            app_updates[key] = ""
+            continue
+
+        if not value:
+            app_updates[key] = ""
+            continue
+
+        if uses_azure_key_vault(settings):
+            secret_updates[key] = value
+            app_updates[key] = get_key_vault_reference(settings, key)
+        else:
+            app_updates[key] = value
+
+    if password and "DASHBOARD_ACCESS_PASSWORD_HASH" not in app_updates:
+        if uses_azure_key_vault(settings):
+            secret_updates["DASHBOARD_ACCESS_PASSWORD_HASH"] = normalized_updates["DASHBOARD_ACCESS_PASSWORD_HASH"]
+            app_updates["DASHBOARD_ACCESS_PASSWORD_HASH"] = get_key_vault_reference(
+                settings,
+                "DASHBOARD_ACCESS_PASSWORD_HASH",
+            )
+        else:
+            app_updates["DASHBOARD_ACCESS_PASSWORD_HASH"] = normalized_updates["DASHBOARD_ACCESS_PASSWORD_HASH"]
+
+    return app_updates, secret_updates
 
 
 # ---------------------------------------------------------------------------
@@ -700,6 +853,74 @@ def _sync_settings_with_management_api(settings: dict, updates: dict) -> dict:
     return {"ok": True}
 
 
+def _sync_secrets_with_key_vault_sdk(settings: dict, secret_updates: dict) -> dict:
+    if not _AZURE_KEY_VAULT_AVAILABLE:
+        return {"ok": False, "error": "Azure Key Vault SDK is not installed."}
+    if DefaultAzureCredential is None:
+        return {"ok": False, "error": "Azure identity SDK is not installed."}
+
+    credential = None
+    client = None
+    try:
+        credential = DefaultAzureCredential(exclude_interactive_browser_credential=True)
+        client = SecretClient(vault_url=settings["key_vault_uri"], credential=credential)
+        for key, value in secret_updates.items():
+            client.set_secret(get_key_vault_secret_name(settings, key), value)
+        return {"ok": True}
+    except Exception as e:
+        logger.warning("Azure Key Vault sync failed for %s: %s", settings["key_vault_name"], e)
+        return {"ok": False, "error": str(e)}
+    finally:
+        if client is not None and hasattr(client, "close"):
+            client.close()
+        if credential is not None and hasattr(credential, "close"):
+            credential.close()
+
+
+def _sync_secrets_with_key_vault_cli(settings: dict, secret_updates: dict) -> dict:
+    if not azure_cli_available():
+        return {"ok": False, "error": "Azure CLI (az) is not installed."}
+
+    failures = []
+    for key, value in secret_updates.items():
+        result = _run_azure_settings_command(
+            [
+                "az", "keyvault", "secret", "set",
+                "--vault-name", settings["key_vault_name"],
+                "--name", get_key_vault_secret_name(settings, key),
+                "--value", value,
+                "--output", "none",
+            ],
+            f"Key Vault {settings['key_vault_name']}",
+        )
+        if not result["ok"]:
+            failures.append(result["error"])
+
+    if failures:
+        return {"ok": False, "error": "; ".join(failures)}
+    return {"ok": True}
+
+
+def sync_secrets_to_key_vault(settings: dict, secret_updates: dict) -> dict:
+    if not secret_updates:
+        return {"ok": True}
+    if not uses_azure_key_vault(settings):
+        return {"ok": False, "error": "Azure Key Vault is not configured."}
+
+    sdk_result = _sync_secrets_with_key_vault_sdk(settings, secret_updates)
+    if sdk_result["ok"]:
+        return sdk_result
+
+    cli_result = _sync_secrets_with_key_vault_cli(settings, secret_updates)
+    if cli_result["ok"]:
+        return cli_result
+
+    return {
+        "ok": False,
+        "error": f"{sdk_result['error']}; {cli_result['error']}",
+    }
+
+
 def _sync_settings_with_cli(settings: dict, updates: dict) -> dict:
     """Use Azure CLI to sync app settings when running locally."""
     if not azure_cli_available():
@@ -754,13 +975,18 @@ def sync_settings_to_azure(updates: dict) -> dict:
         return {"ok": True}
 
     azure_settings = get_azure_settings(overrides=updates)
-    normalized_updates = {k: str(v) for k, v in updates.items()}
+    app_updates, secret_updates = prepare_azure_app_settings(azure_settings, updates)
 
-    management_result = _sync_settings_with_management_api(azure_settings, normalized_updates)
+    if secret_updates and uses_azure_key_vault(azure_settings):
+        secret_result = sync_secrets_to_key_vault(azure_settings, secret_updates)
+        if not secret_result["ok"]:
+            return secret_result
+
+    management_result = _sync_settings_with_management_api(azure_settings, app_updates)
     if management_result["ok"]:
         return management_result
 
-    cli_result = _sync_settings_with_cli(azure_settings, normalized_updates)
+    cli_result = _sync_settings_with_cli(azure_settings, app_updates)
     if cli_result["ok"]:
         return cli_result
 
