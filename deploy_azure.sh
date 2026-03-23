@@ -392,6 +392,20 @@ if [ "$USE_KEY_VAULT" = "true" ]; then
 fi
 
 # ------------------------------------------------------------------
+# Ensure required resource providers are registered
+# ------------------------------------------------------------------
+for _ns in Microsoft.Web Microsoft.Storage Microsoft.Compute; do
+    _state=$(az provider show --namespace "$_ns" --query registrationState -o tsv 2>/dev/null || echo "NotRegistered")
+    if [ "$_state" = "Registered" ]; then
+        echo "[OK] $_ns provider already registered."
+    else
+        echo "Registering $_ns provider (this may take a minute)..."
+        az provider register --namespace "$_ns" --wait --output none >/dev/null
+        echo "[OK] $_ns provider registered."
+    fi
+done
+
+# ------------------------------------------------------------------
 # Shared Azure resources
 # ------------------------------------------------------------------
 echo "Ensuring resource group \"$RESOURCE_GROUP\" exists..."

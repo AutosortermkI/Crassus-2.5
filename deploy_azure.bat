@@ -137,6 +137,20 @@ if not defined AZURE_SUBSCRIPTION_ID (
 )
 
 REM ------------------------------------------------------------------
+REM Ensure required resource providers are registered
+REM ------------------------------------------------------------------
+for %%P in (Microsoft.Web Microsoft.Storage Microsoft.Compute) do (
+    for /f "tokens=*" %%S in ('az provider show --namespace %%P --query registrationState -o tsv 2^>nul') do set _prov_state=%%S
+    if "!_prov_state!"=="Registered" (
+        echo [OK] %%P provider already registered.
+    ) else (
+        echo Registering %%P provider ^(this may take a minute^)...
+        az provider register --namespace %%P --wait --output none >nul 2>&1
+        echo [OK] %%P provider registered.
+    )
+)
+
+REM ------------------------------------------------------------------
 REM Shared Azure resources
 REM ------------------------------------------------------------------
 echo Ensuring resource group "!AZURE_RESOURCE_GROUP!" exists...
