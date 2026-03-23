@@ -45,6 +45,7 @@ DEFAULT_LOCATION="eastus"
 DEFAULT_STORAGE_ACCOUNT="crassusstorage25"
 DEFAULT_FUNCTION_APP_NAME="crassus-25"
 DEFAULT_DASHBOARD_SKU="F1"
+DASHBOARD_FALLBACK_LOCATIONS="eastus westus2 centralus westus northeurope westeurope"
 PYTHON_VERSION="3.11"
 DASHBOARD_STARTUP_COMMAND='gunicorn --bind=0.0.0.0:${PORT:-8000} --timeout 600 dashboard_wsgi:app'
 DASHBOARD_DEPLOYMENT_POLL_SECONDS=5
@@ -391,6 +392,20 @@ if [ "$USE_KEY_VAULT" = "true" ]; then
 fi
 
 # ------------------------------------------------------------------
+# Ensure required resource providers are registered
+# ------------------------------------------------------------------
+for _ns in Microsoft.Web Microsoft.Storage Microsoft.Compute; do
+    _state=$(az provider show --namespace "$_ns" --query registrationState -o tsv 2>/dev/null || echo "NotRegistered")
+    if [ "$_state" = "Registered" ]; then
+        echo "[OK] $_ns provider already registered."
+    else
+        echo "Registering $_ns provider (this may take a minute)..."
+        az provider register --namespace "$_ns" --wait --output none >/dev/null
+        echo "[OK] $_ns provider registered."
+    fi
+done
+
+# ------------------------------------------------------------------
 # Shared Azure resources
 # ------------------------------------------------------------------
 echo "Ensuring resource group \"$RESOURCE_GROUP\" exists..."
@@ -433,15 +448,44 @@ fi
 if az appservice plan show --name "$DASHBOARD_PLAN_NAME" --resource-group "$RESOURCE_GROUP" --output none >/dev/null 2>&1; then
     echo "[OK] App Service plan \"$DASHBOARD_PLAN_NAME\" already exists."
 else
-    echo "Creating App Service plan \"$DASHBOARD_PLAN_NAME\"..."
-    az appservice plan create \
-        --name "$DASHBOARD_PLAN_NAME" \
-        --resource-group "$RESOURCE_GROUP" \
-        --location "$LOCATION" \
-        --sku "$DASHBOARD_SKU" \
-        --is-linux \
-        --output none
-    echo "[OK] App Service plan created."
+    # Build the ordered list of regions to try: configured LOCATION first,
+    # then every fallback location that isn't a duplicate.
+    _plan_regions="$LOCATION"
+    for _fb in $DASHBOARD_FALLBACK_LOCATIONS; do
+        case " $_plan_regions " in
+            *" $_fb "*) ;;          # already in the list
+            *) _plan_regions="$_plan_regions $_fb" ;;
+        esac
+    done
+
+    _plan_created=false
+    for _region in $_plan_regions; do
+        echo "Creating App Service plan \"$DASHBOARD_PLAN_NAME\" in $_region..."
+        _plan_err=$(az appservice plan create \
+            --name "$DASHBOARD_PLAN_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --location "$_region" \
+            --sku "$DASHBOARD_SKU" \
+            --is-linux \
+            --output none 2>&1) && {
+            echo "[OK] App Service plan created in $_region."
+            if [ "$_region" != "$LOCATION" ]; then
+                echo "[INFO] Dashboard region differs from primary ($LOCATION). Saving AZURE_DASHBOARD_LOCATION=$_region to .env"
+                upsert_env_var "AZURE_DASHBOARD_LOCATION" "$_region"
+            fi
+            _plan_created=true
+            break
+        }
+        echo "[WARN] $_region: quota unavailable — $_plan_err"
+    done
+
+    if [ "$_plan_created" = false ]; then
+        echo
+        echo "[ERROR] Could not create App Service plan in any region."
+        echo "        Tried: $_plan_regions"
+        echo "        Request a quota increase at https://aka.ms/ProdportalCRP/#blade/Microsoft_Azure_Capacity/UsageAndQuota.ReactView"
+        exit 1
+    fi
 fi
 
 if az webapp show --name "$DASHBOARD_APP_NAME" --resource-group "$RESOURCE_GROUP" --output none >/dev/null 2>&1; then
@@ -581,6 +625,10 @@ while IFS= read -r line; do
 
     SETTINGS+=("$line")
 done < "$ENV_FILE"
+
+# When deployed to Azure the dashboard must talk to the Azure Function App,
+# not a local dev server on localhost:7071.
+SETTINGS+=("WEBHOOK_FORWARD_TARGET=azure")
 
 SETTINGS+=("DASHBOARD_ACCESS_PASSWORD=")
 if [ -n "$AZURE_DASHBOARD_ACCESS_PASSWORD_HASH" ]; then

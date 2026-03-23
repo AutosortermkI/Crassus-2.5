@@ -40,6 +40,7 @@ set DEFAULT_LOCATION=eastus
 set DEFAULT_STORAGE_ACCOUNT=crassusstorage25
 set DEFAULT_FUNCTION_APP_NAME=crassus-25
 set DEFAULT_DASHBOARD_SKU=F1
+set DASHBOARD_FALLBACK_LOCATIONS=eastus westus2 centralus westus northeurope westeurope
 set PYTHON_VERSION=3.11
 set DASHBOARD_STARTUP_COMMAND=gunicorn --bind=0.0.0.0:${PORT:-8000} --timeout 600 dashboard_wsgi:app
 set DASHBOARD_DEPLOYMENT_POLL_SECONDS=5
@@ -136,6 +137,20 @@ if not defined AZURE_SUBSCRIPTION_ID (
 )
 
 REM ------------------------------------------------------------------
+REM Ensure required resource providers are registered
+REM ------------------------------------------------------------------
+for %%P in (Microsoft.Web Microsoft.Storage Microsoft.Compute) do (
+    for /f "tokens=*" %%S in ('az provider show --namespace %%P --query registrationState -o tsv 2^>nul') do set _prov_state=%%S
+    if "!_prov_state!"=="Registered" (
+        echo [OK] %%P provider already registered.
+    ) else (
+        echo Registering %%P provider ^(this may take a minute^)...
+        az provider register --namespace %%P --wait --output none >nul 2>&1
+        echo [OK] %%P provider registered.
+    )
+)
+
+REM ------------------------------------------------------------------
 REM Shared Azure resources
 REM ------------------------------------------------------------------
 echo Ensuring resource group "!AZURE_RESOURCE_GROUP!" exists...
@@ -189,19 +204,35 @@ az appservice plan show --name !AZURE_DASHBOARD_PLAN_NAME! --resource-group !AZU
 if %ERRORLEVEL% equ 0 (
     echo [OK] App Service plan "!AZURE_DASHBOARD_PLAN_NAME!" already exists.
 ) else (
-    echo Creating App Service plan "!AZURE_DASHBOARD_PLAN_NAME!"...
-    az appservice plan create ^
-        --name !AZURE_DASHBOARD_PLAN_NAME! ^
-        --resource-group !AZURE_RESOURCE_GROUP! ^
-        --location !AZURE_LOCATION! ^
-        --sku !AZURE_DASHBOARD_SKU! ^
-        --is-linux ^
-        --output none
-    if %ERRORLEVEL% neq 0 (
-        echo [ERROR] Failed to create App Service plan.
+    set _plan_created=false
+    for %%R in (!AZURE_LOCATION! !DASHBOARD_FALLBACK_LOCATIONS!) do (
+        if "!_plan_created!"=="false" (
+            echo Creating App Service plan "!AZURE_DASHBOARD_PLAN_NAME!" in %%R...
+            az appservice plan create ^
+                --name !AZURE_DASHBOARD_PLAN_NAME! ^
+                --resource-group !AZURE_RESOURCE_GROUP! ^
+                --location %%R ^
+                --sku !AZURE_DASHBOARD_SKU! ^
+                --is-linux ^
+                --output none >nul 2>&1
+            if !ERRORLEVEL! equ 0 (
+                echo [OK] App Service plan created in %%R.
+                if not "%%R"=="!AZURE_LOCATION!" (
+                    echo [INFO] Dashboard region differs from primary ^(!AZURE_LOCATION!^). Saving AZURE_DASHBOARD_LOCATION=%%R to .env
+                    call :upsert_env_var AZURE_DASHBOARD_LOCATION %%R
+                )
+                set _plan_created=true
+            ) else (
+                echo [WARN] %%R: quota unavailable, trying next region...
+            )
+        )
+    )
+    if "!_plan_created!"=="false" (
+        echo.
+        echo [ERROR] Could not create App Service plan in any region.
+        echo         Request a quota increase at https://aka.ms/ProdportalCRP
         exit /b 1
     )
-    echo [OK] App Service plan created.
 )
 
 az webapp show --name !AZURE_DASHBOARD_APP_NAME! --resource-group !AZURE_RESOURCE_GROUP! --output none >nul 2>&1
@@ -251,7 +282,7 @@ echo Pushing Dashboard Web App settings from .env...
 az webapp config appsettings set ^
     --name !AZURE_DASHBOARD_APP_NAME! ^
     --resource-group !AZURE_RESOURCE_GROUP! ^
-    --settings !SETTINGS! AZURE_SUBSCRIPTION_ID=!AZURE_SUBSCRIPTION_ID! SCM_DO_BUILD_DURING_DEPLOYMENT=true ENABLE_ORYX_BUILD=true WEBSITES_PORT=8000 WEBSITE_WARMUP_PATH=/login ^
+    --settings !SETTINGS! WEBHOOK_FORWARD_TARGET=azure AZURE_SUBSCRIPTION_ID=!AZURE_SUBSCRIPTION_ID! SCM_DO_BUILD_DURING_DEPLOYMENT=true ENABLE_ORYX_BUILD=true WEBSITES_PORT=8000 WEBSITE_WARMUP_PATH=/login ^
     --output none
 if %ERRORLEVEL% neq 0 (
     echo [ERROR] Failed to configure Dashboard app settings.
