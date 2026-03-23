@@ -472,13 +472,13 @@ def api_webhook_info():
 def api_webhook_token_save():
     """Generate or save a webhook auth token."""
     try:
-        import secrets as _secrets
+        import secrets
 
         data = request.get_json() or {}
         token = (data.get("token") or "").strip()
 
         if not token:
-            token = _secrets.token_hex(16)
+            token = secrets.token_hex(16)
 
         save_config({"WEBHOOK_AUTH_TOKEN": token}, allow_secret_keys=True)
 

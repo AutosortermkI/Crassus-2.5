@@ -3,108 +3,104 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Crassus 2.5 Login</title>
+    <title>Crassus 2.5 — Login</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-
-        :root {
-            --bg: #0f1728;
-            --panel: #16213e;
-            --border: #24436d;
-            --text: #ebf2ff;
-            --muted: #8da1c7;
-            --red: #fb7185;
-            --blue: #60a5fa;
-        }
-
         body {
             min-height: 100vh;
             display: grid;
             place-items: center;
             padding: 24px;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            color: var(--text);
-            background:
-                radial-gradient(circle at top right, rgba(96, 165, 250, 0.14), transparent 30%),
-                radial-gradient(circle at bottom left, rgba(45, 212, 191, 0.08), transparent 35%),
-                var(--bg);
         }
 
-        .panel {
+        .login-panel {
             width: min(420px, 100%);
-            background: rgba(22, 33, 62, 0.96);
+            background: var(--panel);
             border: 1px solid var(--border);
-            border-radius: 18px;
-            padding: 28px 26px;
-            box-shadow: 0 24px 50px rgba(0, 0, 0, 0.28);
+            border-radius: var(--radius-lg);
+            padding: 32px 28px;
+            box-shadow: 0 24px 64px rgba(0, 0, 0, 0.4);
         }
 
-        h1 {
-            font-size: 24px;
-            margin-bottom: 10px;
-        }
-
-        p {
-            color: var(--muted);
-            margin-bottom: 18px;
-            line-height: 1.55;
-        }
-
-        label {
-            display: block;
+        .login-panel h1 {
+            font-size: 22px;
             margin-bottom: 8px;
-            font-size: 12px;
+        }
+
+        .login-panel h1 span {
+            color: var(--accent);
+        }
+
+        .login-panel p {
+            color: var(--text-muted);
+            margin-bottom: 20px;
+            line-height: 1.6;
+            font-size: 14px;
+        }
+
+        .login-panel label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 11px;
+            font-weight: 700;
             letter-spacing: 0.08em;
             text-transform: uppercase;
-            color: var(--muted);
+            color: var(--text-muted);
         }
 
-        input {
+        .login-panel input[type="password"] {
             width: 100%;
-            border: 1px solid rgba(141, 161, 199, 0.22);
-            background: rgba(15, 23, 40, 0.85);
+            border: 1px solid var(--border);
+            background: var(--surface);
             color: var(--text);
-            border-radius: 12px;
-            padding: 13px 14px;
-            font-size: 15px;
+            border-radius: var(--radius);
+            padding: 12px 14px;
+            font-size: 14px;
             outline: none;
             margin-bottom: 16px;
+            transition: border-color var(--transition), box-shadow var(--transition);
         }
 
-        input:focus {
-            border-color: rgba(96, 165, 250, 0.75);
-            box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.14);
+        .login-panel input[type="password"]:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.12);
         }
 
-        button {
+        .login-panel button[type="submit"] {
             width: 100%;
             border: none;
-            border-radius: 12px;
-            padding: 13px 16px;
-            font-size: 15px;
+            border-radius: var(--radius);
+            padding: 12px 16px;
+            font-size: 14px;
             font-weight: 700;
-            color: #041523;
-            background: linear-gradient(135deg, #60a5fa, #2dd4bf);
+            color: #0c1524;
+            background: var(--accent);
             cursor: pointer;
+            transition: background var(--transition);
         }
 
-        .error {
+        .login-panel button[type="submit"]:hover {
+            background: var(--accent-hover);
+        }
+
+        .login-error {
             margin-bottom: 14px;
             padding: 12px 14px;
-            border-radius: 12px;
+            border-radius: var(--radius);
             color: #fff;
-            background: rgba(251, 113, 133, 0.16);
-            border: 1px solid rgba(251, 113, 133, 0.35);
+            background: var(--red-bg);
+            border: 1px solid var(--red-border);
+            font-size: 13px;
         }
     </style>
 </head>
 <body>
-    <form class="panel" method="post" action="/login">
-        <h1>Partner Dashboard</h1>
+    <form class="login-panel" method="post" action="/login">
+        <h1>Crassus <span>2.5</span></h1>
         <p>Enter the shared dashboard password to view webhook activity, settings, and broker snapshots.</p>
 
         {% if error %}
-        <div class="error">{{ error }}</div>
+        <div class="login-error">{{ error }}</div>
         {% endif %}
 
         <input type="hidden" name="next" value="{{ next_url }}">
