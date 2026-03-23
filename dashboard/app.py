@@ -97,7 +97,9 @@ def _login_redirect_target() -> str:
 
 def _forwarding_target() -> tuple[str, str]:
     env = read_env()
-    target = (env.get("WEBHOOK_FORWARD_TARGET") or "local").strip().lower() or "local"
+    # Default to "azure" when running on Azure App Service, "local" otherwise.
+    default_target = "azure" if _HOSTED_DASHBOARD else "local"
+    target = (env.get("WEBHOOK_FORWARD_TARGET") or default_target).strip().lower() or default_target
     custom_url = (env.get("WEBHOOK_FORWARD_URL") or "").strip()
 
     if target == "none":
