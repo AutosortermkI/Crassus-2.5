@@ -626,6 +626,10 @@ while IFS= read -r line; do
     SETTINGS+=("$line")
 done < "$ENV_FILE"
 
+# When deployed to Azure the dashboard must talk to the Azure Function App,
+# not a local dev server on localhost:7071.
+SETTINGS+=("WEBHOOK_FORWARD_TARGET=azure")
+
 SETTINGS+=("DASHBOARD_ACCESS_PASSWORD=")
 if [ -n "$AZURE_DASHBOARD_ACCESS_PASSWORD_HASH" ]; then
     if [ "$USE_KEY_VAULT" = "true" ]; then
