@@ -565,7 +565,7 @@ AZURE_FUNCTION_BASE_URL="https://crassus-25.azurewebsites.net"
 AZURE_SUBSCRIPTION_ID=""
 AZURE_DASHBOARD_APP_NAME="crassus-25-dashboard"
 AZURE_DASHBOARD_PLAN_NAME="crassus-25-dashboard-plan"
-AZURE_DASHBOARD_SKU="B1"
+AZURE_DASHBOARD_SKU="F1"
 AZURE_USE_KEY_VAULT="true"
 AZURE_KEY_VAULT_NAME=""
 AZURE_KEY_VAULT_SECRET_PREFIX=""
@@ -594,7 +594,7 @@ All variables are configurable via the dashboard UI or directly in `.env`.
 | `AZURE_SUBSCRIPTION_ID` | Active `az login` subscription | Required for the hosted dashboard to sync Azure app settings via managed identity / SDK |
 | `AZURE_DASHBOARD_APP_NAME` | Derived from function app name | Shared Azure Web App that serves the dashboard |
 | `AZURE_DASHBOARD_PLAN_NAME` | Derived from dashboard app name | App Service plan for the hosted dashboard |
-| `AZURE_DASHBOARD_SKU` | `B1` | App Service SKU used when deploying the hosted dashboard |
+| `AZURE_DASHBOARD_SKU` | `F1` | App Service SKU for the hosted dashboard (F1=Free, B1=Basic) |
 | `AZURE_USE_KEY_VAULT` | `true` | Store hosted secrets in Azure Key Vault and sync app settings as Key Vault references |
 | `AZURE_KEY_VAULT_NAME` | Derived from storage account | Azure Key Vault used for hosted secrets |
 | `AZURE_KEY_VAULT_SECRET_PREFIX` | Function app name | Prefix applied to Key Vault secret names |
