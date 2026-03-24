@@ -687,7 +687,7 @@ az webapp config appsettings set \
         "SCM_DO_BUILD_DURING_DEPLOYMENT=true" \
         "ENABLE_ORYX_BUILD=true" \
         "WEBSITES_PORT=8000" \
-        "WEBSITE_WARMUP_PATH=/login" \
+        "WEBSITE_WARMUP_PATH=/health" \
     --output none
 echo "[OK] Dashboard app settings configured."
 
@@ -751,7 +751,7 @@ az webapp deploy \
     --output none
 DASHBOARD_URL="https://${DASHBOARD_APP_NAME}.azurewebsites.net"
 wait_for_dashboard_deployment "$PREVIOUS_DASHBOARD_DEPLOYMENT_ID"
-wait_for_dashboard_health "${DASHBOARD_URL}/login"
+wait_for_dashboard_health "${DASHBOARD_URL}/health"
 echo "[OK] Dashboard Web App deployment complete."
 
 # ------------------------------------------------------------------
