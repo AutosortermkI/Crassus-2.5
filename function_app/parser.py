@@ -1,5 +1,5 @@
 """
-Crassus 2.0 -- Webhook content parser.
+Crassus 2.5 -- Webhook content parser.
 
 Parses the multi-line ``content`` field from TradingView webhook alerts
 into a structured signal object.

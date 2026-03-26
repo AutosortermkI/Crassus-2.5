@@ -1,5 +1,5 @@
 """
-Crassus 2.0 -- Options order submission and exit management.
+Crassus 2.5 -- Options order submission and exit management.
 
 Submits options orders to Alpaca and manages bracket-style exits.
 

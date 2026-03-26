@@ -1,5 +1,5 @@
 """
-Crassus 2.0 -- Stock bracket order construction and submission.
+Crassus 2.5 -- Stock bracket order construction and submission.
 
 Builds and submits Alpaca bracket orders (limit parent + take-profit + stop-loss)
 for equity / stock trades.

@@ -1,5 +1,5 @@
 """
-Crassus 2.0 -- Black-Scholes Greeks computation and implied volatility solver.
+Crassus 2.5 -- Black-Scholes Greeks computation and implied volatility solver.
 
 Provides:
   - European-style Black-Scholes option pricing

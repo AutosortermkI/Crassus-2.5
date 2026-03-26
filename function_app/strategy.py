@@ -1,5 +1,5 @@
 """
-Crassus 2.0 -- Strategy configuration and bracket-price computation.
+Crassus 2.5 -- Strategy configuration and bracket-price computation.
 
 Each registered strategy has:
   - Stock TP / SL / stop-limit percentages (applied to entry price)

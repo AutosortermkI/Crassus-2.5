@@ -1,5 +1,5 @@
 """
-Crassus 2.0 -- Azure Function entry point.
+Crassus 2.5 -- Azure Function entry point.
 
 HTTP trigger that receives TradingView webhook alerts and routes them
 to stock or options bracket-order logic.
@@ -14,6 +14,7 @@ Flow:
 Endpoint: ``POST /api/trade``
 """
 
+import hmac
 import os
 import json
 import logging
@@ -104,7 +105,7 @@ def trade(req: func.HttpRequest) -> func.HttpResponse:
     # 1. Authentication: validate token (header or query parameter)
     # ----------------------------------------------------------------
     token = req.headers.get("X-Webhook-Token", "") or req.params.get("token", "")
-    if not token or token != WEBHOOK_AUTH_TOKEN:
+    if not token or not hmac.compare_digest(token, WEBHOOK_AUTH_TOKEN):
         log_structured(logger, logging.WARNING, "Unauthorized request", correlation_id)
         return _json_response({"error": "Unauthorized", "correlation_id": correlation_id}, 401)
 
@@ -210,7 +211,7 @@ def webhook_activity(req: func.HttpRequest) -> func.HttpResponse:
     """Return recent webhook snapshots and the active-webhook rollup."""
     correlation_id = generate_correlation_id()
     token = req.headers.get("X-Webhook-Token", "") or req.params.get("token", "")
-    if not token or token != WEBHOOK_AUTH_TOKEN:
+    if not token or not hmac.compare_digest(token, WEBHOOK_AUTH_TOKEN):
         return _json_response({"error": "Unauthorized", "correlation_id": correlation_id}, 401)
 
     try:
