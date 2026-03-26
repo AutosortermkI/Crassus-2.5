@@ -1,5 +1,5 @@
 """
-Crassus 2.0 -- Options contract screening and selection.
+Crassus 2.5 -- Options contract screening and selection.
 
 Queries Alpaca's options API for available contracts on an underlying symbol
 and selects the best contract based on configurable criteria:
@@ -20,6 +20,7 @@ Extension points:
   - Custom scoring / ranking beyond simple filters
 """
 
+import math
 import os
 import logging
 from datetime import date, timedelta
@@ -286,7 +287,7 @@ def screen_with_yahoo(
 
             delta = None
             greeks = None
-            if iv > 0 and not (iv != iv):  # Check for NaN
+            if iv is not None and not math.isnan(iv) and iv > 0:
                 greeks = compute_all_greeks(
                     underlying_price=entry_price,
                     strike=ycontract.strike,
@@ -306,7 +307,7 @@ def screen_with_yahoo(
                 target_delta=target_delta,
                 oi=ycontract.open_interest,
                 spread_pct=spread_pct,
-                iv=iv if (iv and iv == iv) else None,
+                iv=iv if (iv is not None and not math.isnan(iv)) else None,
             )
 
             candidates.append({
@@ -481,7 +482,7 @@ def _screen_alpaca_only(
                 option_type=contract_type,
             )
             # Filter by delta if IV solve succeeded
-            if iv and iv == iv:  # Not NaN
+            if iv is not None and not math.isnan(iv) and iv > 0:
                 delta = compute_delta(
                     underlying_price=entry_price,
                     strike=strike,
@@ -498,7 +499,7 @@ def _screen_alpaca_only(
             target_delta=target_delta,
             oi=oi,
             spread_pct=None,  # No bid/ask from Alpaca trading API
-            iv=iv if (iv and iv == iv) else None,
+            iv=iv if (iv is not None and not math.isnan(iv)) else None,
         )
 
         candidates.append({

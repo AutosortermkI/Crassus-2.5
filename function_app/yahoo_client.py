@@ -1,5 +1,5 @@
 """
-Crassus 2.0 -- Yahoo Finance market data client.
+Crassus 2.5 -- Yahoo Finance market data client.
 
 Ported from the ``fishpussy7.py`` (v7) project's ``YahooCrumbClient``.
 

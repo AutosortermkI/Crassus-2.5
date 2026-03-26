@@ -11,8 +11,10 @@ Storage or Cosmos DB.
 """
 
 import os
+import fcntl
 import json
 import logging
+from contextlib import contextmanager
 from pathlib import Path
 from dataclasses import dataclass, asdict
 from typing import Optional
@@ -50,6 +52,42 @@ class ExitTarget:
 # Target persistence (JSON file)
 # ---------------------------------------------------------------------------
 
+_LOCK_FILE = _TARGETS_FILE.with_suffix(".lock")
+
+
+@contextmanager
+def _locked_targets():
+    """Context manager that yields (current_targets, save_fn) under an exclusive file lock.
+
+    Usage::
+
+        with _locked_targets() as (targets, save):
+            targets["SYM"] = {...}
+            save(targets)
+    """
+    _LOCK_FILE.touch(exist_ok=True)
+    with open(_LOCK_FILE, "r") as lock_fh:
+        fcntl.flock(lock_fh, fcntl.LOCK_EX)
+        try:
+            # Load
+            if _TARGETS_FILE.exists():
+                try:
+                    with open(_TARGETS_FILE, "r") as f:
+                        data = json.load(f)
+                except (json.JSONDecodeError, OSError):
+                    data = {}
+            else:
+                data = {}
+
+            def _save(targets: dict[str, dict]) -> None:
+                with open(_TARGETS_FILE, "w") as f:
+                    json.dump(targets, f, indent=2)
+
+            yield data, _save
+        finally:
+            fcntl.flock(lock_fh, fcntl.LOCK_UN)
+
+
 def _load_targets() -> dict[str, dict]:
     """Load targets from disk.  Returns {contract_symbol: target_dict}."""
     if not _TARGETS_FILE.exists():
@@ -69,9 +107,9 @@ def _save_targets(targets: dict[str, dict]) -> None:
 
 def register_exit_target(target: ExitTarget) -> None:
     """Register TP/SL targets for a newly opened options position."""
-    targets = _load_targets()
-    targets[target.contract_symbol] = asdict(target)
-    _save_targets(targets)
+    with _locked_targets() as (targets, save):
+        targets[target.contract_symbol] = asdict(target)
+        save(targets)
     log_structured(
         logger, logging.INFO,
         "Registered exit target",
@@ -84,9 +122,9 @@ def register_exit_target(target: ExitTarget) -> None:
 
 def remove_exit_target(contract_symbol: str) -> None:
     """Remove a target after exit order is placed or position is closed."""
-    targets = _load_targets()
-    targets.pop(contract_symbol, None)
-    _save_targets(targets)
+    with _locked_targets() as (targets, save):
+        targets.pop(contract_symbol, None)
+        save(targets)
 
 
 # ---------------------------------------------------------------------------
@@ -102,7 +140,10 @@ def check_options_exits(client: TradingClient) -> list[dict]:
 
     Returns a list of actions taken (for logging / response).
     """
-    targets = _load_targets()
+    # Take a snapshot of targets under lock
+    with _locked_targets() as (targets_snapshot, _save):
+        targets = dict(targets_snapshot)
+
     if not targets:
         return []
 
@@ -126,6 +167,7 @@ def check_options_exits(client: TradingClient) -> list[dict]:
         position_map[pos.symbol] = pos
 
     actions = []
+    symbols_to_remove: list[str] = []
 
     for symbol, target_data in list(targets.items()):
         pos = position_map.get(symbol)
@@ -138,7 +180,7 @@ def check_options_exits(client: TradingClient) -> list[dict]:
                 correlation_id,
                 contract=symbol,
             )
-            remove_exit_target(symbol)
+            symbols_to_remove.append(symbol)
             actions.append({"contract": symbol, "action": "target_removed", "reason": "position_closed"})
             continue
 
@@ -173,7 +215,7 @@ def check_options_exits(client: TradingClient) -> list[dict]:
                     time_in_force=TimeInForce.DAY,
                 ))
                 order_id = str(order.id)
-                remove_exit_target(symbol)
+                symbols_to_remove.append(symbol)
                 actions.append({
                     "contract": symbol, "action": "take_profit",
                     "price": current_price, "target": tp, "order_id": order_id,
@@ -198,7 +240,7 @@ def check_options_exits(client: TradingClient) -> list[dict]:
                     time_in_force=TimeInForce.DAY,
                 ))
                 order_id = str(order.id)
-                remove_exit_target(symbol)
+                symbols_to_remove.append(symbol)
                 actions.append({
                     "contract": symbol, "action": "stop_loss",
                     "price": current_price, "target": sl, "order_id": order_id,
@@ -206,5 +248,12 @@ def check_options_exits(client: TradingClient) -> list[dict]:
             except Exception as e:
                 log_structured(logger, logging.ERROR, f"SL exit order failed: {e}", correlation_id, contract=symbol)
                 actions.append({"contract": symbol, "action": "sl_error", "error": str(e)})
+
+    # Batch-remove completed targets under a single lock acquisition
+    if symbols_to_remove:
+        with _locked_targets() as (current_targets, save):
+            for sym in symbols_to_remove:
+                current_targets.pop(sym, None)
+            save(current_targets)
 
     return actions

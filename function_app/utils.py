@@ -1,5 +1,5 @@
 """
-Crassus 2.0 -- Shared utilities.
+Crassus 2.5 -- Shared utilities.
 
 Provides:
   - Correlation ID generation for request tracing
