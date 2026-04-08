@@ -1,5 +1,6 @@
 """Tests for signal deduplication."""
 import time
+import dedup as dedup_module
 from dedup import SignalDedup, is_duplicate_signal, reset_dedup_cache
 
 
@@ -57,6 +58,16 @@ class TestSignalDedup:
         dedup = SignalDedup(ttl=60)
         dedup.is_duplicate("AAPL", "buy", "bmr", "stock", 150.0)
         assert not dedup.is_duplicate("AAPL", "buy", "bmr", "options", 150.0)
+
+    def test_shared_store_duplicate_blocks_signal(self, monkeypatch):
+        dedup = SignalDedup(ttl=60)
+        monkeypatch.setattr(dedup_module, "_shared_check_and_register", lambda *args, **kwargs: True)
+        assert dedup.is_duplicate("AAPL", "buy", "bmr", "stock", 150.0)
+
+    def test_shared_store_new_signal_allows_processing(self, monkeypatch):
+        dedup = SignalDedup(ttl=60)
+        monkeypatch.setattr(dedup_module, "_shared_check_and_register", lambda *args, **kwargs: False)
+        assert not dedup.is_duplicate("AAPL", "buy", "bmr", "stock", 150.0)
 
 
 class TestModuleLevelDedup:

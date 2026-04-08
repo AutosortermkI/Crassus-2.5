@@ -4,10 +4,10 @@ Crassus 2.5 -- Options exit monitoring.
 Polls open options positions and submits exit orders when take-profit
 or stop-loss targets are hit.
 
-Target storage uses a JSON file on disk.  This works for local
-development and single-instance Azure Functions.  For multi-instance
-scaling, swap ``_load_targets`` / ``_save_targets`` for Azure Table
-Storage or Cosmos DB.
+Target storage uses Azure Blob Storage when the Function App is configured
+with a real ``AzureWebJobsStorage`` connection string, so tracked exits can
+survive instance restarts and scale-out. Local development falls back to a
+JSON file on disk.
 """
 
 import os
@@ -15,13 +15,18 @@ import fcntl
 import json
 import logging
 from contextlib import contextmanager
-from pathlib import Path
 from dataclasses import dataclass, asdict
+from pathlib import Path
 from typing import Optional
 
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import MarketOrderRequest, LimitOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce
+
+try:
+    from azure.storage.blob import BlobServiceClient
+except ImportError:  # pragma: no cover - exercised in environments without Azure SDK
+    BlobServiceClient = None
 
 from utils import log_structured, round_options_price, get_logger, generate_correlation_id
 
@@ -29,6 +34,7 @@ logger = get_logger(__name__)
 
 # Target storage file (sits alongside function_app.py)
 _TARGETS_FILE = Path(__file__).resolve().parent / ".options_targets.json"
+CONTAINER_NAME = os.environ.get("OPTIONS_TARGETS_CONTAINER", "options-exit-targets")
 
 
 # ---------------------------------------------------------------------------
@@ -49,10 +55,62 @@ class ExitTarget:
 
 
 # ---------------------------------------------------------------------------
-# Target persistence (JSON file)
+# Target persistence
 # ---------------------------------------------------------------------------
 
 _LOCK_FILE = _TARGETS_FILE.with_suffix(".lock")
+
+
+def _connection_string() -> str:
+    value = os.environ.get("AzureWebJobsStorage", "").strip()
+    if not value or value == "UseDevelopmentStorage=true":
+        return ""
+    return value
+
+
+def _use_blob_store() -> bool:
+    return BlobServiceClient is not None and bool(_connection_string())
+
+
+def _container_client():
+    service = BlobServiceClient.from_connection_string(_connection_string())
+    client = service.get_container_client(CONTAINER_NAME)
+    try:
+        client.create_container()
+    except Exception:
+        pass
+    return client
+
+
+def _record_blob_target(target: ExitTarget) -> None:
+    client = _container_client()
+    client.upload_blob(
+        f"{target.contract_symbol}.json",
+        json.dumps(asdict(target), indent=2),
+        overwrite=True,
+    )
+
+
+def _load_blob_targets() -> dict[str, dict]:
+    client = _container_client()
+    targets: dict[str, dict] = {}
+    for blob in client.list_blobs():
+        try:
+            raw = client.download_blob(blob.name).readall()
+            target = json.loads(raw)
+        except Exception:
+            continue
+        symbol = target.get("contract_symbol")
+        if symbol:
+            targets[symbol] = target
+    return targets
+
+
+def _remove_blob_target(contract_symbol: str) -> None:
+    try:
+        _container_client().delete_blob(f"{contract_symbol}.json")
+    except Exception:
+        pass
 
 
 @contextmanager
@@ -89,7 +147,9 @@ def _locked_targets():
 
 
 def _load_targets() -> dict[str, dict]:
-    """Load targets from disk.  Returns {contract_symbol: target_dict}."""
+    """Load targets from shared storage or disk."""
+    if _use_blob_store():
+        return _load_blob_targets()
     if not _TARGETS_FILE.exists():
         return {}
     try:
@@ -107,6 +167,19 @@ def _save_targets(targets: dict[str, dict]) -> None:
 
 def register_exit_target(target: ExitTarget) -> None:
     """Register TP/SL targets for a newly opened options position."""
+    if _use_blob_store():
+        _record_blob_target(target)
+        log_structured(
+            logger, logging.INFO,
+            "Registered exit target",
+            target.correlation_id,
+            contract=target.contract_symbol,
+            tp=target.take_profit_price,
+            sl=target.stop_loss_price,
+            storage="blob",
+        )
+        return
+
     with _locked_targets() as (targets, save):
         targets[target.contract_symbol] = asdict(target)
         save(targets)
@@ -117,11 +190,16 @@ def register_exit_target(target: ExitTarget) -> None:
         contract=target.contract_symbol,
         tp=target.take_profit_price,
         sl=target.stop_loss_price,
+        storage="file",
     )
 
 
 def remove_exit_target(contract_symbol: str) -> None:
     """Remove a target after exit order is placed or position is closed."""
+    if _use_blob_store():
+        _remove_blob_target(contract_symbol)
+        return
+
     with _locked_targets() as (targets, save):
         targets.pop(contract_symbol, None)
         save(targets)
@@ -140,10 +218,7 @@ def check_options_exits(client: TradingClient) -> list[dict]:
 
     Returns a list of actions taken (for logging / response).
     """
-    # Take a snapshot of targets under lock
-    with _locked_targets() as (targets_snapshot, _save):
-        targets = dict(targets_snapshot)
-
+    targets = _load_targets()
     if not targets:
         return []
 
@@ -251,9 +326,13 @@ def check_options_exits(client: TradingClient) -> list[dict]:
 
     # Batch-remove completed targets under a single lock acquisition
     if symbols_to_remove:
-        with _locked_targets() as (current_targets, save):
+        if _use_blob_store():
             for sym in symbols_to_remove:
-                current_targets.pop(sym, None)
-            save(current_targets)
+                _remove_blob_target(sym)
+        else:
+            with _locked_targets() as (current_targets, save):
+                for sym in symbols_to_remove:
+                    current_targets.pop(sym, None)
+                save(current_targets)
 
     return actions
