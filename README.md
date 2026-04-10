@@ -462,7 +462,7 @@ Alpaca does **not** support bracket orders (`BRACKET` / `OCO` / `OTO`) for optio
   - **Stop loss hit** → market sell (fast exit)
   - **Position closed externally** → auto-cleans up stale targets
 
-Target persistence uses a local JSON file (`.options_targets.json`). For multi-instance Azure scaling, swap for Azure Table Storage or Cosmos DB.
+Target persistence uses Azure Blob Storage in hosted deployments, with a local JSON fallback (`.options_targets.json`) for development.
 
 ### Risk sizing
 
@@ -590,7 +590,17 @@ All variables are configurable via the dashboard UI or directly in `.env`.
 | Variable | Default | Description |
 |---|---|---|
 | `ALPACA_PAPER` | `true` | `true` = paper trading, `false` = live |
+| `LIVE_TRADING_CONFIRMED` | unset | Must be `yes` before live trading is allowed |
 | `DEFAULT_STOCK_QTY` | `1` | Shares per stock trade |
+| `MAX_OPEN_POSITIONS` | `10` | Max concurrent open positions before new entries are blocked |
+| `DEDUP_TTL_SECONDS` | `60` | Reject duplicate webhook fingerprints for this many seconds |
+| `SIGNAL_DEDUP_CONTAINER` | `signal-dedup` | Azure Blob container used for cross-instance webhook idempotency |
+| `OPTIONS_TARGETS_CONTAINER` | `options-exit-targets` | Azure Blob container used for shared options exit targets |
+| `TRADING_HALTED` | `false` | Operator kill switch for blocking all new entries |
+| `TRADING_HALTED_REASON` | empty | Optional reason returned in blocked responses and logs |
+| `MAX_DAILY_LOSS_DOLLARS` | disabled | Block new entries after daily loss breaches this dollar amount |
+| `MAX_DAILY_LOSS_PCT` | disabled | Block new entries after daily loss breaches this percentage |
+| `STALE_ORDER_MINUTES` | `120` | Cancel lingering unfilled stock entry orders after this many minutes |
 | `AZURE_SUBSCRIPTION_ID` | Active `az login` subscription | Required for the hosted dashboard to sync Azure app settings via managed identity / SDK |
 | `AZURE_DASHBOARD_APP_NAME` | Derived from function app name | Shared Azure Web App that serves the dashboard |
 | `AZURE_DASHBOARD_PLAN_NAME` | Derived from dashboard app name | App Service plan for the hosted dashboard |
@@ -652,6 +662,11 @@ All variables are configurable via the dashboard UI or directly in `.env`.
 | **200** | Order placed successfully (JSON with order details + `correlation_id`) |
 | **400** | Bad payload, missing fields, unknown strategy, or no suitable contract found |
 | **401** | Missing or invalid auth token (header or query param) |
+| **403** | Live trading not confirmed or daily loss guard blocked a new entry |
+| **409** | Duplicate webhook rejected inside the dedup window |
+| **422** | Buying power check failed before order submission |
+| **429** | Position-limit guard blocked a new entry |
+| **503** | Operator halt is active (`TRADING_HALTED=true`) |
 | **502** | Alpaca API error (upstream failure) |
 | **500** | Internal / unexpected error |
 

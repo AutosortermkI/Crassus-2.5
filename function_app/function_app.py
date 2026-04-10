@@ -50,7 +50,12 @@ from risk import (
     MaxPositionsExceededError,
 )
 from dedup import is_duplicate_signal
-from safety import check_live_trading_gate, LiveTradingNotConfirmedError
+from safety import (
+    check_trading_safety,
+    LiveTradingNotConfirmedError,
+    TradingHaltedError,
+    DailyLossLimitExceededError,
+)
 from order_monitor import submit_with_retry, check_stock_orders, cancel_stale_orders
 from utils import (
     generate_correlation_id,
@@ -94,14 +99,6 @@ def trade(req: func.HttpRequest) -> func.HttpResponse:
     log_structured(logger, logging.INFO, "Received trade request", correlation_id)
 
     # ----------------------------------------------------------------
-    # 0. Live trading safety gate
-    # ----------------------------------------------------------------
-    try:
-        check_live_trading_gate(correlation_id)
-    except LiveTradingNotConfirmedError as e:
-        return _json_response({"error": str(e), "correlation_id": correlation_id}, 403)
-
-    # ----------------------------------------------------------------
     # 1. Authentication: validate token (header or query parameter)
     # ----------------------------------------------------------------
     token = req.headers.get("X-Webhook-Token", "") or req.params.get("token", "")
@@ -128,6 +125,24 @@ def trade(req: func.HttpRequest) -> func.HttpResponse:
         _record_activity(data, correlation_id, response, signal=None, parse_error=str(e))
         return response
 
+    # ----------------------------------------------------------------
+    # 2a. Trading safety gates
+    # ----------------------------------------------------------------
+    try:
+        check_trading_safety(trading_client, correlation_id)
+    except LiveTradingNotConfirmedError as e:
+        response = _json_response({"error": str(e), "correlation_id": correlation_id}, 403)
+        _record_activity(data, correlation_id, response, signal=signal, parse_error=str(e))
+        return response
+    except TradingHaltedError as e:
+        response = _json_response({"error": str(e), "correlation_id": correlation_id}, 503)
+        _record_activity(data, correlation_id, response, signal=signal, parse_error=str(e))
+        return response
+    except DailyLossLimitExceededError as e:
+        response = _json_response({"error": str(e), "correlation_id": correlation_id}, 403)
+        _record_activity(data, correlation_id, response, signal=signal, parse_error=str(e))
+        return response
+
     log_structured(
         logger, logging.INFO, "Signal parsed", correlation_id,
         ticker=signal.ticker, side=signal.side,
@@ -143,6 +158,7 @@ def trade(req: func.HttpRequest) -> func.HttpResponse:
         strategy=signal.strategy,
         mode=signal.mode,
         price=signal.price,
+        correlation_id=correlation_id,
     ):
         log_structured(
             logger, logging.WARNING, "Duplicate signal rejected", correlation_id,
@@ -368,6 +384,13 @@ def _handle_stock_order(signal, strategy_config, correlation_id: str) -> func.Ht
 def _handle_options_order(signal, strategy_config, correlation_id: str) -> func.HttpResponse:
     """Process an options order with contract screening and risk sizing."""
 
+    # -- Pre-flight: position limit check --
+    try:
+        validate_position_limit(trading_client, correlation_id)
+    except MaxPositionsExceededError as e:
+        log_structured(logger, logging.WARNING, str(e), correlation_id)
+        return _json_response({"error": str(e), "correlation_id": correlation_id}, 429)
+
     # 1. Screen for the best options contract
     try:
         contract = screen_option_contracts(
@@ -402,6 +425,13 @@ def _handle_options_order(signal, strategy_config, correlation_id: str) -> func.
         premium_price=contract.premium,
     )
 
+    # -- Pre-flight: buying power check --
+    required_dollars = qty * contract.premium * 100.0
+    try:
+        validate_buying_power(trading_client, required_dollars, correlation_id)
+    except InsufficientBuyingPowerError as e:
+        return _json_response({"error": str(e), "correlation_id": correlation_id}, 422)
+
     # 4. Submit entry order
     params = OptionsOrderParams(
         contract_symbol=contract.symbol,
@@ -413,7 +443,10 @@ def _handle_options_order(signal, strategy_config, correlation_id: str) -> func.
         stop_loss_price=sl_price,
     )
 
-    order_id = submit_options_entry_order(trading_client, params, correlation_id)
+    order_id = submit_with_retry(
+        lambda: submit_options_entry_order(trading_client, params, correlation_id),
+        correlation_id,
+    )
 
     # Register TP/SL targets so the exit monitor can track this position
     register_exit_target(ExitTarget(
