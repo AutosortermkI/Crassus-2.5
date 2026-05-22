@@ -52,11 +52,25 @@ from risk import (
 from dedup import is_duplicate_signal
 from safety import (
     check_trading_safety,
+    check_operator_halt,
+    check_live_trading_gate,
     LiveTradingNotConfirmedError,
     TradingHaltedError,
     DailyLossLimitExceededError,
 )
 from order_monitor import submit_with_retry, check_stock_orders, cancel_stale_orders
+from tastytrade_orders import (
+    TastytradeAPIError,
+    TastytradeBracketParams,
+    TastytradeConfigurationError,
+    get_order_broker,
+    get_tastytrade_account_equity,
+    get_tastytrade_client,
+    submit_tastytrade_stock_order,
+    tastytrade_dry_run_enabled,
+    validate_tastytrade_buying_power,
+    validate_tastytrade_position_limit,
+)
 from utils import (
     generate_correlation_id,
     log_structured,
@@ -129,7 +143,7 @@ def trade(req: func.HttpRequest) -> func.HttpResponse:
     # 2a. Trading safety gates
     # ----------------------------------------------------------------
     try:
-        check_trading_safety(trading_client, correlation_id)
+        _check_request_safety(correlation_id)
     except LiveTradingNotConfirmedError as e:
         response = _json_response({"error": str(e), "correlation_id": correlation_id}, 403)
         _record_activity(data, correlation_id, response, signal=signal, parse_error=str(e))
@@ -140,6 +154,24 @@ def trade(req: func.HttpRequest) -> func.HttpResponse:
         return response
     except DailyLossLimitExceededError as e:
         response = _json_response({"error": str(e), "correlation_id": correlation_id}, 403)
+        _record_activity(data, correlation_id, response, signal=signal, parse_error=str(e))
+        return response
+    except TastytradeConfigurationError as e:
+        response = _json_response(
+            {"error": str(e), "broker": "tastytrade", "correlation_id": correlation_id},
+            503,
+        )
+        _record_activity(data, correlation_id, response, signal=signal, parse_error=str(e))
+        return response
+    except TastytradeAPIError as e:
+        response = _json_response(
+            {
+                "error": f"Tastytrade API error: {str(e)}",
+                "broker": "tastytrade",
+                "correlation_id": correlation_id,
+            },
+            502,
+        )
         _record_activity(data, correlation_id, response, signal=signal, parse_error=str(e))
         return response
 
@@ -187,6 +219,20 @@ def trade(req: func.HttpRequest) -> func.HttpResponse:
     try:
         if signal.mode == "stock":
             response = _handle_stock_order(signal, strategy_config, correlation_id)
+        elif signal.mode == "options" and get_order_broker() == "tastytrade":
+            response = _json_response(
+                {
+                    "error": (
+                        "Tastytrade options routing is not integrated yet. "
+                        "Stock alerts can use Tastytrade now; options are blocked "
+                        "to avoid sending unverified contract symbols."
+                    ),
+                    "broker": "tastytrade",
+                    "mode": "options",
+                    "correlation_id": correlation_id,
+                },
+                501,
+            )
         elif signal.mode == "options":
             response = _handle_options_order(signal, strategy_config, correlation_id)
         else:
@@ -204,6 +250,30 @@ def trade(req: func.HttpRequest) -> func.HttpResponse:
         )
         response = _json_response(
             {"error": f"Alpaca API error: {str(e)}", "correlation_id": correlation_id},
+            502,
+        )
+        _record_activity(data, correlation_id, response, signal=signal, parse_error=str(e))
+        return response
+
+    except TastytradeConfigurationError as e:
+        log_structured(
+            logger, logging.ERROR, f"Tastytrade configuration error: {e}", correlation_id,
+            symbol=signal.ticker, mode=signal.mode,
+        )
+        response = _json_response(
+            {"error": str(e), "broker": "tastytrade", "correlation_id": correlation_id},
+            503,
+        )
+        _record_activity(data, correlation_id, response, signal=signal, parse_error=str(e))
+        return response
+
+    except TastytradeAPIError as e:
+        log_structured(
+            logger, logging.ERROR, f"Tastytrade API error: {e}", correlation_id,
+            symbol=signal.ticker, mode=signal.mode, status_code=e.status_code,
+        )
+        response = _json_response(
+            {"error": f"Tastytrade API error: {str(e)}", "broker": "tastytrade", "correlation_id": correlation_id},
             502,
         )
         _record_activity(data, correlation_id, response, signal=signal, parse_error=str(e))
@@ -308,6 +378,8 @@ def check_stock_orders_timer(timer: func.TimerRequest) -> None:
 
 def _handle_stock_order(signal, strategy_config, correlation_id: str) -> func.HttpResponse:
     """Process a stock bracket order with full production safety checks."""
+    if get_order_broker() == "tastytrade":
+        return _handle_tastytrade_stock_order(signal, strategy_config, correlation_id)
 
     # -- Pre-flight: position limit check --
     try:
@@ -367,6 +439,76 @@ def _handle_stock_order(signal, strategy_config, correlation_id: str) -> func.Ht
 
     return _json_response({
         "status": "ok",
+        "mode": "stock",
+        "order_id": order_id,
+        "symbol": signal.ticker,
+        "side": signal.side,
+        "qty": qty,
+        "entry_price": round_stock_price(signal.price),
+        "take_profit": round_stock_price(tp),
+        "stop_loss": round_stock_price(stop),
+        "stop_limit": round_stock_price(stop_limit),
+        "strategy": signal.strategy,
+        "correlation_id": correlation_id,
+    }, 200)
+
+
+def _handle_tastytrade_stock_order(signal, strategy_config, correlation_id: str) -> func.HttpResponse:
+    """Process a Tastytrade stock OTOCO order with broker-specific checks."""
+    client = get_tastytrade_client()
+
+    try:
+        validate_tastytrade_position_limit(client, correlation_id)
+    except MaxPositionsExceededError as e:
+        log_structured(logger, logging.WARNING, str(e), correlation_id)
+        return _json_response({"error": str(e), "broker": "tastytrade", "correlation_id": correlation_id}, 429)
+
+    tp, stop, stop_limit = compute_stock_bracket_prices(
+        entry_price=signal.price,
+        side=signal.side,
+        config=strategy_config,
+    )
+
+    try:
+        equity = get_tastytrade_account_equity(client)
+    except Exception as e:
+        log_structured(logger, logging.ERROR, f"Failed to fetch Tastytrade equity: {e}", correlation_id)
+        equity = None
+
+    qty = compute_stock_qty(
+        entry_price=signal.price,
+        stop_loss_pct=strategy_config.stock_sl_pct,
+        account_equity=equity,
+    )
+
+    required_dollars = qty * signal.price
+    try:
+        validate_tastytrade_buying_power(client, required_dollars, correlation_id)
+    except InsufficientBuyingPowerError as e:
+        return _json_response({"error": str(e), "broker": "tastytrade", "correlation_id": correlation_id}, 422)
+
+    params = TastytradeBracketParams(
+        symbol=signal.ticker,
+        side=signal.side,
+        qty=qty,
+        entry_price=signal.price,
+        take_profit_price=tp,
+        stop_price=stop,
+        stop_limit_price=stop_limit,
+    )
+    order_id = submit_tastytrade_stock_order(client, params, correlation_id)
+
+    log_structured(
+        logger, logging.INFO, "Tastytrade stock order completed", correlation_id,
+        order_id=order_id, symbol=signal.ticker,
+        side=signal.side, strategy=signal.strategy,
+        dry_run=tastytrade_dry_run_enabled(),
+    )
+
+    return _json_response({
+        "status": "ok",
+        "broker": "tastytrade",
+        "dry_run": tastytrade_dry_run_enabled(),
         "mode": "stock",
         "order_id": order_id,
         "symbol": signal.ticker,
@@ -532,6 +674,63 @@ def _record_activity(
     record_webhook_event(event)
     log_structured(logger, logging.INFO, "Webhook activity recorded", correlation_id)
     return None
+
+
+def _check_request_safety(correlation_id: str) -> bool:
+    if get_order_broker() == "tastytrade":
+        return check_tastytrade_trading_safety(correlation_id)
+    return check_trading_safety(trading_client, correlation_id)
+
+
+def check_tastytrade_trading_safety(correlation_id: str) -> bool:
+    """Run safety gates that apply before Tastytrade order entry."""
+    check_operator_halt(correlation_id)
+    check_live_trading_gate(correlation_id)
+    _check_tastytrade_daily_loss_limit(correlation_id)
+    return True
+
+
+def _check_tastytrade_daily_loss_limit(correlation_id: str) -> bool:
+    """Optional daily-loss guard for Tastytrade using an operator-provided baseline."""
+    max_loss_dollars = _env_float("MAX_DAILY_LOSS_DOLLARS", 0.0)
+    max_loss_pct = _env_float("MAX_DAILY_LOSS_PCT", 0.0)
+    if max_loss_dollars <= 0 and max_loss_pct <= 0:
+        return True
+
+    baseline = _env_float("TASTYTRADE_PREVIOUS_NET_LIQUIDATING_VALUE", 0.0)
+    if baseline <= 0:
+        log_structured(
+            logger, logging.WARNING,
+            "Tastytrade daily loss limits configured but TASTYTRADE_PREVIOUS_NET_LIQUIDATING_VALUE is missing",
+            correlation_id,
+        )
+        return True
+
+    equity = get_tastytrade_account_equity(get_tastytrade_client())
+    daily_loss = max(0.0, baseline - equity)
+    daily_loss_pct = (daily_loss / baseline) * 100.0 if baseline else 0.0
+
+    if max_loss_dollars > 0 and daily_loss >= max_loss_dollars:
+        raise DailyLossLimitExceededError(
+            f"Daily loss limit reached: ${daily_loss:.2f} loss exceeds "
+            f"${max_loss_dollars:.2f} limit"
+        )
+    if max_loss_pct > 0 and daily_loss_pct >= max_loss_pct:
+        raise DailyLossLimitExceededError(
+            f"Daily loss limit reached: {daily_loss_pct:.2f}% loss exceeds "
+            f"{max_loss_pct:.2f}% limit"
+        )
+    return True
+
+
+def _env_float(name: str, default: float = 0.0) -> float:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
 
 def _json_response(body: dict, status_code: int) -> func.HttpResponse:
     """Return an ``HttpResponse`` with JSON content type."""

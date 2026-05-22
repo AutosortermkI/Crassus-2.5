@@ -56,8 +56,12 @@ if not exist "%ENV_FILE%" (
     exit /b 1
 )
 
+call :load_env_var ORDER_BROKER
 call :load_env_var ALPACA_API_KEY
 call :load_env_var ALPACA_SECRET_KEY
+call :load_env_var TASTYTRADE_ACCOUNT_NUMBER
+call :load_env_var TASTYTRADE_CLIENT_SECRET
+call :load_env_var TASTYTRADE_REFRESH_TOKEN
 call :load_env_var WEBHOOK_AUTH_TOKEN
 call :load_env_var AZURE_RESOURCE_GROUP
 call :load_env_var AZURE_LOCATION
@@ -79,14 +83,30 @@ if not defined AZURE_FUNCTION_BASE_URL set AZURE_FUNCTION_BASE_URL=https://%AZUR
 if not defined AZURE_DASHBOARD_APP_NAME set AZURE_DASHBOARD_APP_NAME=%AZURE_FUNCTION_APP_NAME%-dashboard
 if not defined AZURE_DASHBOARD_PLAN_NAME set AZURE_DASHBOARD_PLAN_NAME=%AZURE_DASHBOARD_APP_NAME%-plan
 if not defined AZURE_DASHBOARD_SKU set AZURE_DASHBOARD_SKU=%DEFAULT_DASHBOARD_SKU%
+if not defined ORDER_BROKER set ORDER_BROKER=tastytrade
 
-if not defined ALPACA_API_KEY (
-    echo [ERROR] ALPACA_API_KEY and ALPACA_SECRET_KEY must be set in .env
-    exit /b 1
-)
-if not defined ALPACA_SECRET_KEY (
-    echo [ERROR] ALPACA_API_KEY and ALPACA_SECRET_KEY must be set in .env
-    exit /b 1
+if /I "!ORDER_BROKER!"=="tastytrade" (
+    if not defined TASTYTRADE_ACCOUNT_NUMBER (
+        echo [ERROR] TASTYTRADE_ACCOUNT_NUMBER, TASTYTRADE_CLIENT_SECRET, and TASTYTRADE_REFRESH_TOKEN must be set in .env
+        exit /b 1
+    )
+    if not defined TASTYTRADE_CLIENT_SECRET (
+        echo [ERROR] TASTYTRADE_ACCOUNT_NUMBER, TASTYTRADE_CLIENT_SECRET, and TASTYTRADE_REFRESH_TOKEN must be set in .env
+        exit /b 1
+    )
+    if not defined TASTYTRADE_REFRESH_TOKEN (
+        echo [ERROR] TASTYTRADE_ACCOUNT_NUMBER, TASTYTRADE_CLIENT_SECRET, and TASTYTRADE_REFRESH_TOKEN must be set in .env
+        exit /b 1
+    )
+) else (
+    if not defined ALPACA_API_KEY (
+        echo [ERROR] ALPACA_API_KEY and ALPACA_SECRET_KEY must be set in .env when ORDER_BROKER is not tastytrade
+        exit /b 1
+    )
+    if not defined ALPACA_SECRET_KEY (
+        echo [ERROR] ALPACA_API_KEY and ALPACA_SECRET_KEY must be set in .env when ORDER_BROKER is not tastytrade
+        exit /b 1
+    )
 )
 
 if not defined WEBHOOK_AUTH_TOKEN (
@@ -103,6 +123,7 @@ call :upsert_env_var AZURE_FUNCTION_APP_NAME !AZURE_FUNCTION_APP_NAME!
 call :upsert_env_var AZURE_DASHBOARD_APP_NAME !AZURE_DASHBOARD_APP_NAME!
 call :upsert_env_var AZURE_DASHBOARD_PLAN_NAME !AZURE_DASHBOARD_PLAN_NAME!
 call :upsert_env_var AZURE_DASHBOARD_SKU !AZURE_DASHBOARD_SKU!
+call :upsert_env_var ORDER_BROKER !ORDER_BROKER!
 
 if not defined DASHBOARD_ACCESS_PASSWORD if not defined DASHBOARD_ACCESS_PASSWORD_HASH (
     echo [WARN] No dashboard access password is configured.

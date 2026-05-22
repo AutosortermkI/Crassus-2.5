@@ -47,6 +47,8 @@ def check_live_trading_gate(correlation_id: str = "") -> bool:
     Rules:
       - If ``ALPACA_PAPER=true`` (default): always passes (paper mode is safe).
       - If ``ALPACA_PAPER=false`` (live): requires ``LIVE_TRADING_CONFIRMED=yes``.
+      - If ``ORDER_BROKER=tastytrade`` and ``TASTYTRADE_IS_TEST=false``:
+        requires ``LIVE_TRADING_CONFIRMED=yes``.
 
     Returns:
         True if paper mode, or live mode with confirmation.
@@ -54,6 +56,38 @@ def check_live_trading_gate(correlation_id: str = "") -> bool:
     Raises:
         LiveTradingNotConfirmedError: If live mode without confirmation.
     """
+    broker = (
+        os.environ.get("ORDER_BROKER")
+        or os.environ.get("BROKER")
+        or "alpaca"
+    ).strip().lower()
+
+    if broker == "tastytrade":
+        is_test = os.environ.get("TASTYTRADE_IS_TEST", "true").lower() == "true"
+        if is_test:
+            return True
+
+        confirmed = os.environ.get("LIVE_TRADING_CONFIRMED", "").strip().lower()
+        if confirmed != "yes":
+            log_structured(
+                logger, logging.CRITICAL,
+                "LIVE TRADING BLOCKED: TASTYTRADE_IS_TEST=false but "
+                "LIVE_TRADING_CONFIRMED is not set to 'yes'",
+                correlation_id,
+            )
+            raise LiveTradingNotConfirmedError(
+                "Tastytrade live trading is enabled (TASTYTRADE_IS_TEST=false) "
+                "but not confirmed. Set LIVE_TRADING_CONFIRMED=yes to "
+                "acknowledge live trading."
+            )
+
+        log_structured(
+            logger, logging.WARNING,
+            "TASTYTRADE LIVE TRADING MODE ACTIVE",
+            correlation_id,
+        )
+        return True
+
     is_paper = os.environ.get("ALPACA_PAPER", "true").lower() == "true"
 
     if is_paper:

@@ -2,7 +2,7 @@
 Crassus 2.5 -- Dashboard Flask application.
 
 Web UI for configuring webhook routing, reviewing shared TradingView
-activity, and optionally monitoring Alpaca portfolio data.
+activity, and monitoring the selected broker portfolio data.
 
 Usage:
     python dashboard/app.py
@@ -29,13 +29,21 @@ if str(FUNCTION_APP_DIR) not in sys.path:
     sys.path.insert(0, str(FUNCTION_APP_DIR))
 
 from config_manager import (
-    get_config, save_config, save_credentials, read_env, SECRET_KEYS,
+    get_config, save_config, save_credentials, save_tastytrade_credentials,
+    read_env, SECRET_KEYS,
     ensure_dashboard_session_secret, ensure_webhook_token, get_azure_function_activity_url,
     get_azure_function_trade_url, sync_settings_to_azure,
 )
 from alpaca_client import (
     get_account_summary, get_positions, get_recent_orders,
     has_credentials, verify_credentials,
+)
+from tastytrade_client import (
+    get_account_summary as tt_get_account_summary,
+    get_positions as tt_get_positions,
+    get_recent_orders as tt_get_recent_orders,
+    has_credentials as tt_has_credentials,
+    verify_credentials as tt_verify_credentials,
 )
 from webhook_store import build_signature, clear_events, get_activity_snapshot, record_event
 from parser import ParseError, parse_webhook_payload
@@ -109,6 +117,25 @@ def _forwarding_target() -> tuple[str, str]:
     if target == "azure":
         return target, get_azure_function_trade_url(env)
     return "local", "http://localhost:7071/api/trade"
+
+
+def _selected_broker() -> str:
+    env = read_env()
+    broker = (
+        env.get("ORDER_BROKER")
+        or env.get("BROKER")
+        or "alpaca"
+    ).strip().lower()
+    return "tastytrade" if broker == "tastytrade" else "alpaca"
+
+
+def _json_bool(data: dict, key: str, default: bool) -> bool:
+    value = data.get(key, default)
+    if isinstance(value, bool):
+        return value
+    if value in (None, ""):
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _trade_endpoint_url() -> str:
@@ -305,28 +332,101 @@ def index():
 def api_credentials_check():
     """Check whether credentials are configured and valid."""
     try:
+        if _selected_broker() == "tastytrade":
+            if not tt_has_credentials():
+                return jsonify({
+                    "status": "missing",
+                    "broker": "tastytrade",
+                    "message": "Add Tastytrade credentials to enable broker execution.",
+                })
+            result = tt_verify_credentials()
+            if result["ok"]:
+                return jsonify({
+                    "status": "ok",
+                    "broker": "tastytrade",
+                    "account_id": result["account_id"],
+                    "paper": result["paper"],
+                    "dry_run": result.get("dry_run", True),
+                })
+            return jsonify({
+                "status": "invalid",
+                "broker": "tastytrade",
+                "message": result["error"],
+            })
+
         if not has_credentials():
-            return jsonify({"status": "missing"})
+            return jsonify({"status": "missing", "broker": "alpaca"})
         result = verify_credentials()
         if result["ok"]:
             return jsonify({
                 "status": "ok",
+                "broker": "alpaca",
                 "account_id": result["account_id"],
                 "paper": result["paper"],
             })
         else:
-            return jsonify({"status": "invalid", "message": result["error"]})
+            return jsonify({"status": "invalid", "broker": "alpaca", "message": result["error"]})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
 @app.route("/api/credentials/save", methods=["POST"])
 def api_credentials_save():
-    """Save Alpaca credentials to .env and verify they work."""
+    """Save broker credentials to .env and verify they work."""
     try:
         data = request.get_json()
         if not data:
             return jsonify({"status": "error", "message": "No data provided"}), 400
+
+        broker = (data.get("broker") or _selected_broker()).strip().lower()
+        if broker == "tastytrade":
+            account_number = (data.get("account_number") or "").strip()
+            client_secret = (data.get("client_secret") or "").strip()
+            refresh_token = (data.get("refresh_token") or "").strip()
+            is_test = _json_bool(data, "is_test", True)
+            dry_run = _json_bool(data, "dry_run", True)
+
+            if not account_number or not client_secret or not refresh_token:
+                return jsonify({
+                    "status": "error",
+                    "broker": "tastytrade",
+                    "message": "Account number, client secret, and refresh token are required.",
+                }), 400
+
+            save_tastytrade_credentials(
+                account_number,
+                client_secret,
+                refresh_token,
+                is_test=is_test,
+                dry_run=dry_run,
+            )
+
+            result = tt_verify_credentials()
+            if result["ok"]:
+                azure_result = sync_settings_to_azure({
+                    "ORDER_BROKER": "tastytrade",
+                    "TASTYTRADE_ACCOUNT_NUMBER": account_number,
+                    "TASTYTRADE_CLIENT_SECRET": client_secret,
+                    "TASTYTRADE_REFRESH_TOKEN": refresh_token,
+                    "TASTYTRADE_IS_TEST": "true" if is_test else "false",
+                    "TASTYTRADE_DRY_RUN": "true" if dry_run else "false",
+                })
+                msg = "Tastytrade credentials saved and verified."
+                if not azure_result["ok"]:
+                    msg += f" (Azure sync failed: {azure_result['error']})"
+                return jsonify({
+                    "status": "ok",
+                    "broker": "tastytrade",
+                    "message": msg,
+                    "account_id": result["account_id"],
+                    "paper": result["paper"],
+                    "dry_run": result.get("dry_run", dry_run),
+                })
+            return jsonify({
+                "status": "invalid",
+                "broker": "tastytrade",
+                "message": "Saved, but authentication failed: " + result["error"],
+            })
 
         api_key = (data.get("api_key") or "").strip()
         secret_key = (data.get("secret_key") or "").strip()
@@ -355,6 +455,7 @@ def api_credentials_save():
                 msg += f" (Azure sync failed: {azure_result['error']})"
             return jsonify({
                 "status": "ok",
+                "broker": "alpaca",
                 "message": msg,
                 "account_id": result["account_id"],
                 "paper": result["paper"],
@@ -410,15 +511,26 @@ def api_save_config():
 
 @app.route("/api/portfolio", methods=["GET"])
 def api_portfolio():
-    """Return Alpaca account summary as JSON."""
+    """Return account summary as JSON."""
     try:
+        if _selected_broker() == "tastytrade":
+            if not tt_has_credentials():
+                return jsonify({
+                    "status": "missing",
+                    "broker": "tastytrade",
+                    "message": "Add Tastytrade credentials to enable the broker snapshot.",
+                })
+            summary = tt_get_account_summary()
+            return jsonify({"status": "ok", "broker": "tastytrade", "portfolio": summary})
+
         if not has_credentials():
             return jsonify({
                 "status": "missing",
+                "broker": "alpaca",
                 "message": "Add Alpaca credentials to enable the broker snapshot.",
             })
         summary = get_account_summary()
-        return jsonify({"status": "ok", "portfolio": summary})
+        return jsonify({"status": "ok", "broker": "alpaca", "portfolio": summary})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
@@ -427,13 +539,24 @@ def api_portfolio():
 def api_positions():
     """Return open positions as JSON."""
     try:
+        if _selected_broker() == "tastytrade":
+            if not tt_has_credentials():
+                return jsonify({
+                    "status": "missing",
+                    "broker": "tastytrade",
+                    "message": "Add Tastytrade credentials to enable positions.",
+                })
+            positions = tt_get_positions()
+            return jsonify({"status": "ok", "broker": "tastytrade", "positions": positions})
+
         if not has_credentials():
             return jsonify({
                 "status": "missing",
+                "broker": "alpaca",
                 "message": "Add Alpaca credentials to enable positions.",
             })
         positions = get_positions()
-        return jsonify({"status": "ok", "positions": positions})
+        return jsonify({"status": "ok", "broker": "alpaca", "positions": positions})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
@@ -442,13 +565,24 @@ def api_positions():
 def api_orders():
     """Return recent orders as JSON."""
     try:
+        if _selected_broker() == "tastytrade":
+            if not tt_has_credentials():
+                return jsonify({
+                    "status": "missing",
+                    "broker": "tastytrade",
+                    "message": "Add Tastytrade credentials to enable recent orders.",
+                })
+            orders = tt_get_recent_orders(limit=20)
+            return jsonify({"status": "ok", "broker": "tastytrade", "orders": orders})
+
         if not has_credentials():
             return jsonify({
                 "status": "missing",
+                "broker": "alpaca",
                 "message": "Add Alpaca credentials to enable recent orders.",
             })
         orders = get_recent_orders(limit=20)
-        return jsonify({"status": "ok", "orders": orders})
+        return jsonify({"status": "ok", "broker": "alpaca", "orders": orders})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 

@@ -60,6 +60,13 @@ TRUE_VALUES = {"1", "true", "yes", "on"}
 
 PARAM_DEFINITIONS = OrderedDict([
     # --- General Settings ---
+    ("ORDER_BROKER", {
+        "label": "Execution Broker",
+        "group": "General Settings",
+        "type": "text",
+        "default": "tastytrade",
+        "description": "Broker used for live webhook execution: tastytrade or alpaca",
+    }),
     ("ALPACA_PAPER", {
         "label": "Paper Trading Mode",
         "group": "General Settings",
@@ -101,6 +108,62 @@ PARAM_DEFINITIONS = OrderedDict([
         "type": "int",
         "default": "50",
         "description": "Maximum number of webhook snapshots to retain on disk",
+    }),
+    ("TASTYTRADE_ACCOUNT_NUMBER", {
+        "label": "Tastytrade Account Number",
+        "group": "Broker: Tastytrade",
+        "type": "text",
+        "default": "",
+        "description": "Account number used for Tastytrade orders, balances, positions, and order history",
+    }),
+    ("TASTYTRADE_IS_TEST", {
+        "label": "Tastytrade Cert/Sandbox",
+        "group": "Broker: Tastytrade",
+        "type": "bool",
+        "default": "true",
+        "description": "true = cert/test API, false = production Tastytrade API",
+    }),
+    ("TASTYTRADE_DRY_RUN", {
+        "label": "Tastytrade Dry Run",
+        "group": "Broker: Tastytrade",
+        "type": "bool",
+        "default": "true",
+        "description": "Validate orders with Tastytrade dry-run endpoints without routing live orders",
+    }),
+    ("TASTYTRADE_OAUTH_SCOPES", {
+        "label": "Tastytrade OAuth Scopes",
+        "group": "Broker: Tastytrade",
+        "type": "text",
+        "default": "read trade",
+        "description": "OAuth scopes requested when refreshing the Tastytrade access token",
+    }),
+    ("TASTYTRADE_BASE_URL", {
+        "label": "Tastytrade Base URL Override",
+        "group": "Broker: Tastytrade",
+        "type": "text",
+        "default": "",
+        "description": "Optional API base URL override; leave blank to use cert/prod from Tastytrade mode",
+    }),
+    ("TASTYTRADE_ENTRY_TIME_IN_FORCE", {
+        "label": "Entry Time in Force",
+        "group": "Broker: Tastytrade",
+        "type": "text",
+        "default": "Day",
+        "description": "Time-in-force for the opening order in a Tastytrade OTOCO stock bracket",
+    }),
+    ("TASTYTRADE_EXIT_TIME_IN_FORCE", {
+        "label": "Exit Time in Force",
+        "group": "Broker: Tastytrade",
+        "type": "text",
+        "default": "GTC",
+        "description": "Time-in-force for Tastytrade take-profit and stop exit orders",
+    }),
+    ("TASTYTRADE_STOP_ORDER_TYPE", {
+        "label": "Stop Order Type",
+        "group": "Broker: Tastytrade",
+        "type": "text",
+        "default": "Stop Limit",
+        "description": "Tastytrade exit stop type: Stop or Stop Limit",
     }),
     ("AZURE_FUNCTION_APP_NAME", {
         "label": "Function App Name",
@@ -362,6 +425,13 @@ PARAM_DEFINITIONS = OrderedDict([
         "default": "",
         "description": "Set to 'yes' to confirm live trading when Paper Trading Mode is off. Required safety gate for real-money trades",
     }),
+    ("TASTYTRADE_PREVIOUS_NET_LIQUIDATING_VALUE", {
+        "label": "Tastytrade Prior Net Liq",
+        "group": "Risk & Data",
+        "type": "float",
+        "default": "",
+        "description": "Optional baseline used for Tastytrade daily-loss checks when MAX_DAILY_LOSS_* is configured",
+    }),
     ("DEDUP_TTL_SECONDS", {
         "label": "Signal Dedup TTL (s)",
         "group": "Risk & Data",
@@ -410,6 +480,8 @@ PARAM_DEFINITIONS = OrderedDict([
 SECRET_KEYS = {
     "ALPACA_API_KEY",
     "ALPACA_SECRET_KEY",
+    "TASTYTRADE_CLIENT_SECRET",
+    "TASTYTRADE_REFRESH_TOKEN",
     "WEBHOOK_AUTH_TOKEN",
     "DASHBOARD_ACCESS_PASSWORD",
     "DASHBOARD_ACCESS_PASSWORD_HASH",
@@ -575,6 +647,29 @@ def save_credentials(api_key: str, secret_key: str, webhook_token: str = "",
     else:
         # Update existing file in-place
         save_config(cred_map, allow_secret_keys=True)
+
+
+def save_tastytrade_credentials(
+    account_number: str,
+    client_secret: str,
+    refresh_token: str,
+    is_test: bool = True,
+    dry_run: bool = True,
+) -> None:
+    """Write Tastytrade credentials and broker mode to .env."""
+    updates = {
+        "ORDER_BROKER": "tastytrade",
+        "TASTYTRADE_ACCOUNT_NUMBER": account_number,
+        "TASTYTRADE_CLIENT_SECRET": client_secret,
+        "TASTYTRADE_REFRESH_TOKEN": refresh_token,
+        "TASTYTRADE_IS_TEST": "true" if is_test else "false",
+        "TASTYTRADE_DRY_RUN": "true" if dry_run else "false",
+    }
+    if not _can_persist_local_env():
+        return
+    if not ENV_PATH.exists():
+        ensure_env_file()
+    save_config(updates, allow_secret_keys=True)
 
 
 def save_config(updates: dict, allow_secret_keys: bool = False) -> None:
