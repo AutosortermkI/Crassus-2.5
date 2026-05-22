@@ -4,28 +4,23 @@ Crassus 2.5 -- Dashboard Alpaca client.
 Provides portfolio, position, and order data for the dashboard UI.
 """
 
-import os
-from pathlib import Path
-from dotenv import load_dotenv
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import GetOrdersRequest
 from alpaca.trading.enums import QueryOrderStatus
 
-# Load .env from repo root
-_env_path = Path(__file__).resolve().parent.parent / ".env"
-load_dotenv(_env_path)
+from config_manager import read_env
 
 
 def reload_env():
-    """Re-read .env from disk so newly saved credentials take effect."""
-    load_dotenv(_env_path, override=True)
+    """Re-read dashboard configuration without mutating process env."""
+    return read_env()
 
 
 def has_credentials() -> bool:
     """Return True if API key and secret are present (non-empty) in env."""
-    reload_env()
-    api_key = os.environ.get("ALPACA_API_KEY", "").strip()
-    secret_key = os.environ.get("ALPACA_SECRET_KEY", "").strip()
+    env = reload_env()
+    api_key = env.get("ALPACA_API_KEY", "").strip()
+    secret_key = env.get("ALPACA_SECRET_KEY", "").strip()
     return bool(api_key) and bool(secret_key)
 
 
@@ -36,12 +31,12 @@ def verify_credentials() -> dict:
         {"ok": True, "account_id": "...", "paper": True/False}  on success
         {"ok": False, "error": "..."}  on failure
     """
-    reload_env()
-    api_key = os.environ.get("ALPACA_API_KEY", "").strip()
-    secret_key = os.environ.get("ALPACA_SECRET_KEY", "").strip()
+    env = reload_env()
+    api_key = env.get("ALPACA_API_KEY", "").strip()
+    secret_key = env.get("ALPACA_SECRET_KEY", "").strip()
     if not api_key or not secret_key:
         return {"ok": False, "error": "API key and secret key are required."}
-    paper = os.environ.get("ALPACA_PAPER", "true").lower() == "true"
+    paper = env.get("ALPACA_PAPER", "true").lower() == "true"
     try:
         client = TradingClient(api_key, secret_key, paper=paper)
         account = client.get_account()
@@ -52,16 +47,17 @@ def verify_credentials() -> dict:
 
 def _get_client() -> TradingClient:
     """Create an Alpaca TradingClient from .env credentials."""
-    reload_env()
-    api_key = os.environ.get("ALPACA_API_KEY", "")
-    secret_key = os.environ.get("ALPACA_SECRET_KEY", "")
-    paper = os.environ.get("ALPACA_PAPER", "true").lower() == "true"
+    env = reload_env()
+    api_key = env.get("ALPACA_API_KEY", "")
+    secret_key = env.get("ALPACA_SECRET_KEY", "")
+    paper = env.get("ALPACA_PAPER", "true").lower() == "true"
     return TradingClient(api_key, secret_key, paper=paper)
 
 
 def get_account_summary() -> dict:
     """Return account overview data."""
     client = _get_client()
+    env = reload_env()
     account = client.get_account()
 
     equity = float(account.equity)
@@ -76,7 +72,7 @@ def get_account_summary() -> dict:
         "portfolio_value": round(float(account.portfolio_value), 2),
         "profit_loss": round(pl, 2),
         "profit_loss_pct": round(pl_pct, 2),
-        "paper": os.environ.get("ALPACA_PAPER", "true").lower() == "true",
+        "paper": env.get("ALPACA_PAPER", "true").lower() == "true",
     }
 
 

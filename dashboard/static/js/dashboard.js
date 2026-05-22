@@ -185,12 +185,19 @@
     }
 
     // ------------------------------------------------------------------
-    // Paper mode toggle
+    // Tastytrade mode toggles
     // ------------------------------------------------------------------
-    function togglePaperMode() {
-        const toggle = document.getElementById('setupPaperToggle');
+    function toggleTastytradeTestMode() {
+        const toggle = document.getElementById('setupTestToggle');
         toggle.classList.toggle('active');
-        document.getElementById('setupPaperLabel').textContent =
+        document.getElementById('setupTestLabel').textContent =
+            toggle.classList.contains('active') ? 'ON' : 'OFF';
+    }
+
+    function toggleTastytradeDryRun() {
+        const toggle = document.getElementById('setupDryRunToggle');
+        toggle.classList.toggle('active');
+        document.getElementById('setupDryRunLabel').textContent =
             toggle.classList.contains('active') ? 'ON' : 'OFF';
     }
 
@@ -459,11 +466,15 @@
                 const badge = document.getElementById('tradingBadge');
 
                 if (data.status === 'ok') {
-                    statusBox.innerHTML = '<span class="status-pill status-success">Connected</span> Alpaca account ' + esc(data.account_id);
-                    badge.textContent = data.paper ? 'Paper Trading' : 'Live Trading';
+                    const broker = data.broker === 'tastytrade' ? 'Tastytrade' : 'Alpaca';
+                    const mode = data.paper ? 'Cert/Sandbox' : 'Live';
+                    const dryRun = data.dry_run ? ' · Dry Run' : '';
+                    statusBox.innerHTML = '<span class="status-pill status-success">Connected</span> ' +
+                        esc(broker) + ' account ' + esc(data.account_id) + ' · ' + esc(mode + dryRun);
+                    badge.textContent = data.paper ? 'Broker Test Mode' : 'Live Trading';
                     badge.className = 'badge ' + (data.paper ? 'badge-paper' : 'badge-live');
                 } else if (data.status === 'missing') {
-                    statusBox.textContent = 'No Alpaca credentials configured. Webhook monitoring is still active.';
+                    statusBox.textContent = 'No Tastytrade credentials configured. Webhook monitoring is still active.';
                     badge.textContent = 'Webhook Ready';
                     badge.className = 'badge badge-neutral';
                 } else {
@@ -482,12 +493,14 @@
     // ------------------------------------------------------------------
     function submitCredentials() {
         const btn = document.getElementById('setupConnectBtn');
-        const apiKey = document.getElementById('setupApiKey').value.trim();
-        const secretKey = document.getElementById('setupSecretKey').value.trim();
-        const paper = document.getElementById('setupPaperToggle').classList.contains('active');
+        const accountNumber = document.getElementById('setupAccountNumber').value.trim();
+        const clientSecret = document.getElementById('setupClientSecret').value.trim();
+        const refreshToken = document.getElementById('setupRefreshToken').value.trim();
+        const isTest = document.getElementById('setupTestToggle').classList.contains('active');
+        const dryRun = document.getElementById('setupDryRunToggle').classList.contains('active');
 
-        if (!apiKey || !secretKey) {
-            showToast('Both API key and secret key are required.', 'error');
+        if (!accountNumber || !clientSecret || !refreshToken) {
+            showToast('Account number, client secret, and refresh token are required.', 'error');
             return;
         }
 
@@ -497,12 +510,19 @@
         fetch('/api/credentials/save', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ api_key: apiKey, secret_key: secretKey, paper }),
+            body: JSON.stringify({
+                broker: 'tastytrade',
+                account_number: accountNumber,
+                client_secret: clientSecret,
+                refresh_token: refreshToken,
+                is_test: isTest,
+                dry_run: dryRun,
+            }),
         })
         .then(r => r.json())
         .then(data => {
             if (data.status !== 'ok') throw new Error(data.message || 'Could not save credentials');
-            showToast('Broker credentials saved and verified', 'success');
+            showToast('Tastytrade credentials saved and verified', 'success');
             loadBrokerStatus();
             loadPortfolio();
             loadPositions();
@@ -761,7 +781,7 @@
         document.getElementById('webhookTemplate').textContent = templateMap.stockBuy;
 
         // Wire up event handlers
-        document.getElementById('setupSecretKey').addEventListener('keydown', e => {
+        document.getElementById('setupRefreshToken').addEventListener('keydown', e => {
             if (e.key === 'Enter') submitCredentials();
         });
 
@@ -790,7 +810,8 @@
 
     // Expose functions needed by onclick handlers in HTML
     window.copyToClipboard = copyToClipboard;
-    window.togglePaperMode = togglePaperMode;
+    window.toggleTastytradeTestMode = toggleTastytradeTestMode;
+    window.toggleTastytradeDryRun = toggleTastytradeDryRun;
     window.setTemplate = setTemplate;
     window.generateToken = generateToken;
     window.testWebhook = testWebhook;

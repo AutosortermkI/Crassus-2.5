@@ -1,6 +1,6 @@
 # Crassus 2.5
 
-Azure Function that receives TradingView webhook alerts and places **bracket orders** (stocks) and **risk-sized options orders** on Alpaca. Includes a local dashboard GUI for credential setup, TradingView webhook configuration, portfolio monitoring, and strategy parameter tuning. Ships with a built-in **backtesting engine** for replaying historical data through the same strategy logic used in live trading.
+Azure Function that receives TradingView webhook alerts and routes stock bracket orders to **Tastytrade OTOCO** by default, with the prior Alpaca path retained as an optional fallback. Includes a local/hosted dashboard GUI for Tastytrade credential setup, TradingView webhook configuration, portfolio monitoring, and strategy parameter tuning. Ships with a built-in **backtesting engine** for replaying historical data through the same strategy logic used in live trading.
 
 ---
 
@@ -12,7 +12,7 @@ cd Crassus-2.5
 ./run_dashboard.sh        # macOS / Linux
 ```
 
-That's it. The script auto-creates a virtual environment, installs the dashboard dependencies, and launches the UI at `http://localhost:5050`. On first launch you can wire in your Alpaca API key and secret, review the shared TradingView webhook URL, and confirm webhook activity is flowing through the shared Azure function.
+That's it. The script auto-creates a virtual environment, installs the dashboard dependencies, and launches the UI at `http://localhost:5050`. On first launch you can wire in your Tastytrade account number, OAuth client secret, and refresh token, review the shared TradingView webhook URL, and confirm webhook activity is flowing through the shared Azure function.
 
 **Windows:** Use `run_dashboard.bat` instead.
 
@@ -20,10 +20,10 @@ That's it. The script auto-creates a virtual environment, installs the dashboard
 
 | Command | What it does |
 |---|---|
-| `./setup.sh` | Full interactive setup (venv, deps, prompts for Alpaca/webhook/dashboard access, `.env` generation) |
+| `./setup.sh` | Full interactive setup (venv, deps, prompts for Tastytrade/webhook/dashboard access, `.env` generation) |
 | `./run_dashboard.sh` | Launch the dashboard GUI (auto-installs deps if needed) |
 | `./run_crassus.sh` | Run the Azure Function locally (`http://localhost:7071/api/trade`) |
-| `./run_tests.sh` | Run the automated test suite (`241` tests, manual live Alpaca check excluded) |
+| `./run_tests.sh` | Run the automated test suite (manual live broker check excluded) |
 | `./deploy_azure.sh` | Deploy to Azure with a hosted dashboard and Key Vault-backed secrets |
 
 All scripts have `.bat` equivalents for Windows.
@@ -39,7 +39,7 @@ The web dashboard (`http://localhost:5050`) provides:
 - **Latest webhook snapshot** — inspect the raw payload, parsed fields, and forward/execution result for the most recent TradingView alert.
 - **Active Webhooks sidebar** — see grouped, recently active alert signatures so partners can confirm what is currently firing.
 - **Recent Alerts table** — audit the latest webhook traffic without digging through Azure logs.
-- **Optional broker panels** — add Alpaca credentials only if you want portfolio, positions, and order history under the webhook monitor.
+- **Broker panel** — add Tastytrade credentials for stock OTOCO execution plus portfolio, positions, and order history under the webhook monitor.
 - **Trading parameters and Azure metadata** — edit strategy settings, webhook retention, and shared Azure naming from the same page.
 
 ---
@@ -118,7 +118,8 @@ function_app/
 ├── function_app.py          # HTTP trigger (POST /api/trade) + timer trigger (exit monitor)
 ├── parser.py                # Webhook content parsing (regex-based)
 ├── strategy.py              # Strategy config + TP/SL/stop-limit computation
-├── stock_orders.py          # Alpaca stock bracket order submission
+├── stock_orders.py          # Alpaca fallback stock bracket order submission
+├── tastytrade_orders.py     # Tastytrade OAuth, account checks, and stock OTOCO submission
 ├── options_screener.py      # Options contract screening (Yahoo-first, Alpaca fallback)
 ├── options_orders.py        # Options limit entry order submission
 ├── exit_monitor.py          # Options exit monitoring (TP/SL target tracking + exit orders)
@@ -133,7 +134,8 @@ function_app/
 dashboard/
 ├── app.py                   # Flask web UI (http://localhost:5050)
 ├── config_manager.py        # .env read/write with parameter metadata
-├── alpaca_client.py         # Alpaca portfolio/positions/orders client
+├── alpaca_client.py         # Alpaca fallback portfolio/positions/orders client
+├── tastytrade_client.py     # Tastytrade portfolio/positions/orders client
 └── templates/
     └── index.html           # Single-page dashboard (dark theme)
 
@@ -198,11 +200,14 @@ TradingView alert fires
         ▼
   Route by mode
         │
-        ├─ mode=stock ────► Stock bracket order (Alpaca BRACKET class)
+        ├─ mode=stock ────► Tastytrade OTOCO stock bracket order by default
         │                       TP / SL / stop-limit from strategy %
-        │                       GTC time-in-force
+        │                       Day entry, GTC exits unless configured otherwise
         │
-        └─ mode=options ──► Screen option contracts (Yahoo + Greeks)
+        └─ mode=options ──► Alpaca fallback path only for now
+                             Tastytrade options are blocked with HTTP 501 until
+                             contract-symbol routing is verified end-to-end
+                             Screen option contracts (Yahoo + Greeks)
                              ► Risk-size qty from MAX_DOLLAR_RISK
                              ► Submit limit entry order (DAY)
                              ► Register TP/SL targets with exit monitor
@@ -334,7 +339,7 @@ The simulated broker checks each OHLCV bar against pending orders:
 | **Stop** | `bar.high >= stop_price` | `bar.low <= stop_price` |
 | **Market** | Immediately at `bar.open` | Immediately at `bar.open` |
 
-**Stock bracket orders** work identically to Alpaca's `BRACKET` class:
+**Stock bracket orders** model the same bracket lifecycle used by the live Tastytrade OTOCO path:
 1. Entry limit order fills first
 2. TP and SL legs activate after entry fills
 3. When one exit leg fills, the other is automatically cancelled
@@ -445,12 +450,14 @@ for name, sm in metrics.by_strategy.items():
 
 ### Data source vs execution venue
 
+Current status: options execution is still on the legacy Alpaca fallback path. If `ORDER_BROKER=tastytrade` and an alert requests `Mode: options`, the Function returns HTTP 501 instead of sending an unverified option order.
+
 | Concern | Source | Why |
 |---|---|---|
 | **Market data** (bid/ask/IV/volume/OI) | Yahoo Finance | Richer options data than Alpaca's trading API |
 | **Greeks computation** | `greeks.py` (local) | Black-Scholes from Yahoo's IV or solved from market prices |
 | **Contract screening** | `options_screener.py` | Uses Yahoo data + Greeks for delta-based selection |
-| **Order execution** | Alpaca | Execution venue; contract symbols map directly from Yahoo OCC format |
+| **Order execution** | Alpaca fallback only | Tastytrade option symbol routing still needs end-to-end verification |
 
 ### Why no bracket orders for options?
 
@@ -486,7 +493,7 @@ When Yahoo Finance is enabled (default), the screener:
    - **Open interest:** minimum OI threshold
    - **Price:** within configured min/max premium range
 4. **Scores** using composite ranking: delta proximity (40%), OI (30%), spread tightness (20%), IV (10%)
-5. **Maps** selected contract symbol to Alpaca for order submission
+5. **Maps** selected contract symbol to the Alpaca fallback path for order submission
 
 **Fallback:** If Yahoo is unavailable or disabled (`YAHOO_ENABLED=false`), the screener falls back to Alpaca-only data with IV solved from close prices.
 
@@ -581,16 +588,23 @@ All variables are configurable via the dashboard UI or directly in `.env`.
 
 | Variable | Description |
 |---|---|
-| `ALPACA_API_KEY` | Alpaca API key |
-| `ALPACA_SECRET_KEY` | Alpaca secret key |
+| `ORDER_BROKER` | `tastytrade` for the current default broker path, or `alpaca` for fallback |
+| `TASTYTRADE_ACCOUNT_NUMBER` | Tastytrade account number |
+| `TASTYTRADE_CLIENT_SECRET` | Tastytrade OAuth client secret |
+| `TASTYTRADE_REFRESH_TOKEN` | Tastytrade OAuth refresh token |
 | `WEBHOOK_AUTH_TOKEN` | Shared secret (via `X-Webhook-Token` header or `?token=` query param) |
 
 ### Optional (with defaults)
 
 | Variable | Default | Description |
 |---|---|---|
-| `ALPACA_PAPER` | `true` | `true` = paper trading, `false` = live |
-| `LIVE_TRADING_CONFIRMED` | unset | Must be `yes` before live trading is allowed |
+| `TASTYTRADE_IS_TEST` | `true` | `true` = Tastytrade cert/test API, `false` = production API |
+| `TASTYTRADE_DRY_RUN` | `true` | Validate stock OTOCO payloads with Tastytrade dry-run endpoints without routing orders |
+| `TASTYTRADE_ENTRY_TIME_IN_FORCE` | `Day` | Time-in-force for the opening OTOCO order |
+| `TASTYTRADE_EXIT_TIME_IN_FORCE` | `GTC` | Time-in-force for take-profit and stop exit orders |
+| `TASTYTRADE_STOP_ORDER_TYPE` | `Stop Limit` | Stop or Stop Limit exit order |
+| `ALPACA_PAPER` | `true` | Alpaca fallback only: `true` = paper trading, `false` = live |
+| `LIVE_TRADING_CONFIRMED` | unset | Must be `yes` before Alpaca live or Tastytrade production trading is allowed |
 | `DEFAULT_STOCK_QTY` | `1` | Shares per stock trade |
 | `MAX_OPEN_POSITIONS` | `10` | Max concurrent open positions before new entries are blocked |
 | `DEDUP_TTL_SECONDS` | `60` | Reject duplicate webhook fingerprints for this many seconds |
@@ -600,6 +614,7 @@ All variables are configurable via the dashboard UI or directly in `.env`.
 | `TRADING_HALTED_REASON` | empty | Optional reason returned in blocked responses and logs |
 | `MAX_DAILY_LOSS_DOLLARS` | disabled | Block new entries after daily loss breaches this dollar amount |
 | `MAX_DAILY_LOSS_PCT` | disabled | Block new entries after daily loss breaches this percentage |
+| `TASTYTRADE_PREVIOUS_NET_LIQUIDATING_VALUE` | disabled | Optional baseline for Tastytrade daily-loss checks |
 | `STALE_ORDER_MINUTES` | `120` | Cancel lingering unfilled stock entry orders after this many minutes |
 | `AZURE_SUBSCRIPTION_ID` | Active `az login` subscription | Required for the hosted dashboard to sync Azure app settings via managed identity / SDK |
 | `AZURE_DASHBOARD_APP_NAME` | Derived from function app name | Shared Azure Web App that serves the dashboard |
@@ -667,7 +682,8 @@ All variables are configurable via the dashboard UI or directly in `.env`.
 | **422** | Buying power check failed before order submission |
 | **429** | Position-limit guard blocked a new entry |
 | **503** | Operator halt is active (`TRADING_HALTED=true`) |
-| **502** | Alpaca API error (upstream failure) |
+| **502** | Broker API error (Alpaca or Tastytrade upstream failure) |
+| **501** | Tastytrade options mode is intentionally blocked until symbol routing is verified |
 | **500** | Internal / unexpected error |
 
 All responses include a `correlation_id` for log tracing in Application Insights.
@@ -703,10 +719,10 @@ curl -X POST http://localhost:7071/api/trade \
 | Package | Purpose |
 |---|---|
 | `azure-functions` | Azure Functions runtime |
-| `alpaca-py` | Alpaca Trading API (stocks + options execution) |
+| `alpaca-py` | Alpaca fallback Trading API and legacy options path |
 | `scipy` | `norm.cdf`/`norm.pdf` (Greeks), `brentq` (IV solver) |
 | `numpy` | Numerical computation |
-| `requests` | Yahoo Finance HTTP client (direct API, not `yfinance`) |
+| `requests` | Yahoo Finance and Tastytrade HTTP client calls |
 
 ### Dashboard (`requirements-dashboard.txt`)
 
@@ -739,7 +755,7 @@ If you prefer to set things up manually instead of using the scripts:
    ```
 
 2. **Configure credentials**
-   - Copy `.env.example` to `.env` and fill in your Alpaca API keys and webhook token.
+   - Copy `.env.example` to `.env` and fill in your Tastytrade credentials and webhook token.
    - Copy `function_app/local.settings.json.example` to `function_app/local.settings.json` and set the `Values` section.
 
 3. **Run the dashboard**

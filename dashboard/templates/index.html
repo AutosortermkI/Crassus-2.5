@@ -153,7 +153,7 @@
                         <h2>Broker Connection</h2>
                     </div>
                     <p class="card-description">
-                        Optional. Connect Alpaca for portfolio data, positions, and order history.
+                        Connect Tastytrade for stock OTOCO execution, portfolio data, positions, and order history.
                     </p>
 
                     <div id="brokerStatus" class="status-box" style="margin-bottom: 14px;">
@@ -161,23 +161,39 @@
                     </div>
 
                     <div class="field-row">
-                        <label for="setupApiKey">API Key</label>
-                        <input class="input" type="text" id="setupApiKey" placeholder="PK..." autocomplete="off" spellcheck="false">
+                        <label for="setupAccountNumber">Account Number</label>
+                        <input class="input" type="text" id="setupAccountNumber" placeholder="5WT..." autocomplete="off" spellcheck="false">
                     </div>
 
                     <div class="field-row">
-                        <label for="setupSecretKey">Secret Key</label>
-                        <input class="input" type="password" id="setupSecretKey" placeholder="Your Alpaca secret key" autocomplete="off" spellcheck="false">
+                        <label for="setupClientSecret">OAuth Client Secret</label>
+                        <input class="input" type="password" id="setupClientSecret" placeholder="Tastytrade OAuth client secret" autocomplete="off" spellcheck="false">
                     </div>
 
                     <div class="field-row">
-                        <label>Paper Trading</label>
+                        <label for="setupRefreshToken">OAuth Refresh Token</label>
+                        <input class="input" type="password" id="setupRefreshToken" placeholder="Tastytrade OAuth refresh token" autocomplete="off" spellcheck="false">
+                    </div>
+
+                    <div class="field-row">
+                        <label>Cert/Sandbox API</label>
                         <div class="toggle-wrap">
-                            <span id="setupPaperLabel">ON</span>
-                            <div id="setupPaperToggle" class="toggle active"
-                                 role="switch" aria-checked="true" aria-label="Paper Trading"
-                                 tabindex="0" onclick="togglePaperMode()"
-                                 onkeydown="if(event.key===' '||event.key==='Enter'){event.preventDefault();togglePaperMode()}"></div>
+                            <span id="setupTestLabel">ON</span>
+                            <div id="setupTestToggle" class="toggle active"
+                                 role="switch" aria-checked="true" aria-label="Cert/Sandbox API"
+                                 tabindex="0" onclick="toggleTastytradeTestMode()"
+                                 onkeydown="if(event.key===' '||event.key==='Enter'){event.preventDefault();toggleTastytradeTestMode()}"></div>
+                        </div>
+                    </div>
+
+                    <div class="field-row">
+                        <label>Dry Run Orders</label>
+                        <div class="toggle-wrap">
+                            <span id="setupDryRunLabel">ON</span>
+                            <div id="setupDryRunToggle" class="toggle active"
+                                 role="switch" aria-checked="true" aria-label="Dry Run Orders"
+                                 tabindex="0" onclick="toggleTastytradeDryRun()"
+                                 onkeydown="if(event.key===' '||event.key==='Enter'){event.preventDefault();toggleTastytradeDryRun()}"></div>
                         </div>
                     </div>
 
@@ -213,7 +229,7 @@
                 <h2>Account Summary</h2>
             </div>
             <div id="portfolioGrid" class="grid-auto">
-                <div class="empty-state">Connect Alpaca credentials to view portfolio data.</div>
+                <div class="empty-state">Connect Tastytrade credentials to view portfolio data.</div>
             </div>
         </div>
 

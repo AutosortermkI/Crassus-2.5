@@ -95,6 +95,63 @@ def test_prepare_azure_app_settings_uses_key_vault_references_for_secrets():
     )
 
 
+def test_prepare_azure_app_settings_treats_tastytrade_tokens_as_key_vault_secrets():
+    settings = {
+        "use_key_vault": True,
+        "key_vault_name": "crassusvault",
+        "key_vault_uri": "https://crassusvault.vault.azure.net",
+        "key_vault_secret_prefix": "crassus-prod",
+    }
+
+    app_updates, secret_updates = config_manager.prepare_azure_app_settings(
+        settings,
+        {
+            "TASTYTRADE_CLIENT_SECRET": "client-secret",
+            "TASTYTRADE_REFRESH_TOKEN": "refresh-token",
+            "TASTYTRADE_ACCOUNT_NUMBER": "5WT12345",
+        },
+    )
+
+    assert secret_updates == {
+        "TASTYTRADE_CLIENT_SECRET": "client-secret",
+        "TASTYTRADE_REFRESH_TOKEN": "refresh-token",
+    }
+    assert app_updates["TASTYTRADE_ACCOUNT_NUMBER"] == "5WT12345"
+    assert app_updates["TASTYTRADE_CLIENT_SECRET"] == (
+        "@Microsoft.KeyVault("
+        "SecretUri=https://crassusvault.vault.azure.net/secrets/crassus-prod-tastytrade-client-secret"
+        ")"
+    )
+    assert app_updates["TASTYTRADE_REFRESH_TOKEN"] == (
+        "@Microsoft.KeyVault("
+        "SecretUri=https://crassusvault.vault.azure.net/secrets/crassus-prod-tastytrade-refresh-token"
+        ")"
+    )
+
+
+def test_save_tastytrade_credentials_writes_secret_and_nonsecret_fields(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text("ORDER_BROKER=alpaca\n")
+
+    monkeypatch.setattr(config_manager, "ENV_PATH", env_path)
+
+    config_manager.save_tastytrade_credentials(
+        account_number="5WT12345",
+        client_secret="client-secret",
+        refresh_token="refresh-token",
+        is_test=True,
+        dry_run=True,
+    )
+
+    saved = env_path.read_text()
+    assert "ORDER_BROKER=tastytrade" in saved
+    assert "TASTYTRADE_ACCOUNT_NUMBER=5WT12345" in saved
+    assert "TASTYTRADE_CLIENT_SECRET=client-secret" in saved
+    assert "TASTYTRADE_REFRESH_TOKEN=refresh-token" in saved
+    assert "TASTYTRADE_IS_TEST=true" in saved
+    assert "TASTYTRADE_DRY_RUN=true" in saved
+
+
 def test_prepare_azure_app_settings_hashes_plain_dashboard_password():
     settings = {
         "use_key_vault": False,

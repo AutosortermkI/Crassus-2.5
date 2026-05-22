@@ -228,7 +228,7 @@ wait_for_dashboard_health() {
 
 is_secret_key() {
     case "$1" in
-        ALPACA_API_KEY|ALPACA_SECRET_KEY|WEBHOOK_AUTH_TOKEN|DASHBOARD_ACCESS_PASSWORD|DASHBOARD_ACCESS_PASSWORD_HASH|DASHBOARD_SESSION_SECRET)
+        ALPACA_API_KEY|ALPACA_SECRET_KEY|TASTYTRADE_CLIENT_SECRET|TASTYTRADE_REFRESH_TOKEN|WEBHOOK_AUTH_TOKEN|DASHBOARD_ACCESS_PASSWORD|DASHBOARD_ACCESS_PASSWORD_HASH|DASHBOARD_SESSION_SECRET)
             return 0
             ;;
         *)
@@ -288,8 +288,12 @@ fi
 # ------------------------------------------------------------------
 # Load credentials and Azure naming from .env
 # ------------------------------------------------------------------
+ORDER_BROKER=$(load_env_var "ORDER_BROKER")
 ALPACA_API_KEY=$(load_env_var "ALPACA_API_KEY")
 ALPACA_SECRET_KEY=$(load_env_var "ALPACA_SECRET_KEY")
+TASTYTRADE_ACCOUNT_NUMBER=$(load_env_var "TASTYTRADE_ACCOUNT_NUMBER")
+TASTYTRADE_CLIENT_SECRET=$(load_env_var "TASTYTRADE_CLIENT_SECRET")
+TASTYTRADE_REFRESH_TOKEN=$(load_env_var "TASTYTRADE_REFRESH_TOKEN")
 WEBHOOK_AUTH_TOKEN=$(load_env_var "WEBHOOK_AUTH_TOKEN")
 RESOURCE_GROUP=$(load_env_var "AZURE_RESOURCE_GROUP")
 LOCATION=$(load_env_var "AZURE_LOCATION")
@@ -325,10 +329,18 @@ if [ "$USE_KEY_VAULT" = "true" ] && [ -z "$KEY_VAULT_NAME" ]; then
     KEY_VAULT_NAME="${STORAGE_ACCOUNT:0:22}kv"
 fi
 KEY_VAULT_SECRET_PREFIX=${KEY_VAULT_SECRET_PREFIX:-$FUNCTION_APP_NAME}
+ORDER_BROKER=${ORDER_BROKER:-tastytrade}
 
-if [ -z "$ALPACA_API_KEY" ] || [ -z "$ALPACA_SECRET_KEY" ]; then
-    echo "[ERROR] ALPACA_API_KEY and ALPACA_SECRET_KEY must be set in .env"
-    exit 1
+if [ "$ORDER_BROKER" = "tastytrade" ]; then
+    if [ -z "$TASTYTRADE_ACCOUNT_NUMBER" ] || [ -z "$TASTYTRADE_CLIENT_SECRET" ] || [ -z "$TASTYTRADE_REFRESH_TOKEN" ]; then
+        echo "[ERROR] TASTYTRADE_ACCOUNT_NUMBER, TASTYTRADE_CLIENT_SECRET, and TASTYTRADE_REFRESH_TOKEN must be set in .env"
+        exit 1
+    fi
+else
+    if [ -z "$ALPACA_API_KEY" ] || [ -z "$ALPACA_SECRET_KEY" ]; then
+        echo "[ERROR] ALPACA_API_KEY and ALPACA_SECRET_KEY must be set in .env when ORDER_BROKER is not tastytrade"
+        exit 1
+    fi
 fi
 
 if [ -z "$WEBHOOK_AUTH_TOKEN" ]; then
@@ -353,6 +365,7 @@ upsert_env_var "AZURE_DASHBOARD_APP_NAME" "$DASHBOARD_APP_NAME"
 upsert_env_var "AZURE_DASHBOARD_PLAN_NAME" "$DASHBOARD_PLAN_NAME"
 upsert_env_var "AZURE_DASHBOARD_SKU" "$DASHBOARD_SKU"
 upsert_env_var "AZURE_USE_KEY_VAULT" "$USE_KEY_VAULT"
+upsert_env_var "ORDER_BROKER" "$ORDER_BROKER"
 if [ "$USE_KEY_VAULT" = "true" ]; then
     upsert_env_var "AZURE_KEY_VAULT_NAME" "$KEY_VAULT_NAME"
     upsert_env_var "AZURE_KEY_VAULT_SECRET_PREFIX" "$KEY_VAULT_SECRET_PREFIX"
