@@ -44,6 +44,7 @@ from tastytrade_client import (
     get_recent_orders as tt_get_recent_orders,
     has_credentials as tt_has_credentials,
     verify_credentials as tt_verify_credentials,
+    verify_credentials_with_values as tt_verify_credentials_with_values,
 )
 from webhook_store import build_signature, clear_events, get_activity_snapshot, record_event
 from parser import ParseError, parse_webhook_payload
@@ -393,16 +394,20 @@ def api_credentials_save():
                     "message": "Account number, client secret, and refresh token are required.",
                 }), 400
 
-            save_tastytrade_credentials(
-                account_number,
-                client_secret,
-                refresh_token,
+            result = tt_verify_credentials_with_values(
+                account_number=account_number,
+                client_secret=client_secret,
+                refresh_token=refresh_token,
                 is_test=is_test,
-                dry_run=dry_run,
             )
-
-            result = tt_verify_credentials()
             if result["ok"]:
+                save_tastytrade_credentials(
+                    account_number,
+                    client_secret,
+                    refresh_token,
+                    is_test=is_test,
+                    dry_run=dry_run,
+                )
                 azure_result = sync_settings_to_azure({
                     "ORDER_BROKER": "tastytrade",
                     "TASTYTRADE_ACCOUNT_NUMBER": account_number,

@@ -51,9 +51,9 @@ set SCRIPT_DIR=%~dp0
 set ENV_FILE=%SCRIPT_DIR%.env
 
 if not exist "%ENV_FILE%" (
-    echo [ERROR] .env file not found at %ENV_FILE%
-    echo         Run setup.bat or the dashboard first to create it.
-    exit /b 1
+    echo [INFO] .env file not found at %ENV_FILE%
+    echo        Creating a minimal deployment config. Broker credentials can be entered in the hosted dashboard after deployment.
+    type nul > "%ENV_FILE%"
 )
 
 call :load_env_var ORDER_BROKER
@@ -62,6 +62,8 @@ call :load_env_var ALPACA_SECRET_KEY
 call :load_env_var TASTYTRADE_ACCOUNT_NUMBER
 call :load_env_var TASTYTRADE_CLIENT_SECRET
 call :load_env_var TASTYTRADE_REFRESH_TOKEN
+call :load_env_var TASTYTRADE_IS_TEST
+call :load_env_var TASTYTRADE_DRY_RUN
 call :load_env_var WEBHOOK_AUTH_TOKEN
 call :load_env_var AZURE_RESOURCE_GROUP
 call :load_env_var AZURE_LOCATION
@@ -84,19 +86,22 @@ if not defined AZURE_DASHBOARD_APP_NAME set AZURE_DASHBOARD_APP_NAME=%AZURE_FUNC
 if not defined AZURE_DASHBOARD_PLAN_NAME set AZURE_DASHBOARD_PLAN_NAME=%AZURE_DASHBOARD_APP_NAME%-plan
 if not defined AZURE_DASHBOARD_SKU set AZURE_DASHBOARD_SKU=%DEFAULT_DASHBOARD_SKU%
 if not defined ORDER_BROKER set ORDER_BROKER=tastytrade
+if not defined TASTYTRADE_IS_TEST set TASTYTRADE_IS_TEST=true
+if not defined TASTYTRADE_DRY_RUN set TASTYTRADE_DRY_RUN=true
 
 if /I "!ORDER_BROKER!"=="tastytrade" (
     if not defined TASTYTRADE_ACCOUNT_NUMBER (
-        echo [ERROR] TASTYTRADE_ACCOUNT_NUMBER, TASTYTRADE_CLIENT_SECRET, and TASTYTRADE_REFRESH_TOKEN must be set in .env
-        exit /b 1
-    )
-    if not defined TASTYTRADE_CLIENT_SECRET (
-        echo [ERROR] TASTYTRADE_ACCOUNT_NUMBER, TASTYTRADE_CLIENT_SECRET, and TASTYTRADE_REFRESH_TOKEN must be set in .env
-        exit /b 1
-    )
-    if not defined TASTYTRADE_REFRESH_TOKEN (
-        echo [ERROR] TASTYTRADE_ACCOUNT_NUMBER, TASTYTRADE_CLIENT_SECRET, and TASTYTRADE_REFRESH_TOKEN must be set in .env
-        exit /b 1
+        echo [WARN] Tastytrade credentials are not set locally.
+        echo        Deployment will continue with stock execution unconfigured.
+        echo        Open the hosted dashboard after deployment to enter and sync Tastytrade credentials.
+    ) else if not defined TASTYTRADE_CLIENT_SECRET (
+        echo [WARN] Tastytrade credentials are not set locally.
+        echo        Deployment will continue with stock execution unconfigured.
+        echo        Open the hosted dashboard after deployment to enter and sync Tastytrade credentials.
+    ) else if not defined TASTYTRADE_REFRESH_TOKEN (
+        echo [WARN] Tastytrade credentials are not set locally.
+        echo        Deployment will continue with stock execution unconfigured.
+        echo        Open the hosted dashboard after deployment to enter and sync Tastytrade credentials.
     )
 ) else (
     if not defined ALPACA_API_KEY (
@@ -124,6 +129,8 @@ call :upsert_env_var AZURE_DASHBOARD_APP_NAME !AZURE_DASHBOARD_APP_NAME!
 call :upsert_env_var AZURE_DASHBOARD_PLAN_NAME !AZURE_DASHBOARD_PLAN_NAME!
 call :upsert_env_var AZURE_DASHBOARD_SKU !AZURE_DASHBOARD_SKU!
 call :upsert_env_var ORDER_BROKER !ORDER_BROKER!
+call :upsert_env_var TASTYTRADE_IS_TEST !TASTYTRADE_IS_TEST!
+call :upsert_env_var TASTYTRADE_DRY_RUN !TASTYTRADE_DRY_RUN!
 
 if not defined DASHBOARD_ACCESS_PASSWORD if not defined DASHBOARD_ACCESS_PASSWORD_HASH (
     echo [WARN] No dashboard access password is configured.
