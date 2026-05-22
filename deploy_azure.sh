@@ -280,9 +280,9 @@ key_vault_reference() {
 }
 
 if [ ! -f "$ENV_FILE" ]; then
-    echo "[ERROR] .env file not found at $ENV_FILE"
-    echo "        Run ./setup.sh or the dashboard first to create it."
-    exit 1
+    echo "[INFO] .env file not found at $ENV_FILE"
+    echo "       Creating a minimal deployment config. Broker credentials can be entered in the hosted dashboard after deployment."
+    touch "$ENV_FILE"
 fi
 
 # ------------------------------------------------------------------
@@ -294,6 +294,8 @@ ALPACA_SECRET_KEY=$(load_env_var "ALPACA_SECRET_KEY")
 TASTYTRADE_ACCOUNT_NUMBER=$(load_env_var "TASTYTRADE_ACCOUNT_NUMBER")
 TASTYTRADE_CLIENT_SECRET=$(load_env_var "TASTYTRADE_CLIENT_SECRET")
 TASTYTRADE_REFRESH_TOKEN=$(load_env_var "TASTYTRADE_REFRESH_TOKEN")
+TASTYTRADE_IS_TEST=$(load_env_var "TASTYTRADE_IS_TEST")
+TASTYTRADE_DRY_RUN=$(load_env_var "TASTYTRADE_DRY_RUN")
 WEBHOOK_AUTH_TOKEN=$(load_env_var "WEBHOOK_AUTH_TOKEN")
 RESOURCE_GROUP=$(load_env_var "AZURE_RESOURCE_GROUP")
 LOCATION=$(load_env_var "AZURE_LOCATION")
@@ -330,11 +332,14 @@ if [ "$USE_KEY_VAULT" = "true" ] && [ -z "$KEY_VAULT_NAME" ]; then
 fi
 KEY_VAULT_SECRET_PREFIX=${KEY_VAULT_SECRET_PREFIX:-$FUNCTION_APP_NAME}
 ORDER_BROKER=${ORDER_BROKER:-tastytrade}
+TASTYTRADE_IS_TEST=${TASTYTRADE_IS_TEST:-true}
+TASTYTRADE_DRY_RUN=${TASTYTRADE_DRY_RUN:-true}
 
 if [ "$ORDER_BROKER" = "tastytrade" ]; then
     if [ -z "$TASTYTRADE_ACCOUNT_NUMBER" ] || [ -z "$TASTYTRADE_CLIENT_SECRET" ] || [ -z "$TASTYTRADE_REFRESH_TOKEN" ]; then
-        echo "[ERROR] TASTYTRADE_ACCOUNT_NUMBER, TASTYTRADE_CLIENT_SECRET, and TASTYTRADE_REFRESH_TOKEN must be set in .env"
-        exit 1
+        echo "[WARN] Tastytrade credentials are not set locally."
+        echo "       Deployment will continue with stock execution unconfigured."
+        echo "       Open the hosted dashboard after deployment to enter and sync Tastytrade credentials."
     fi
 else
     if [ -z "$ALPACA_API_KEY" ] || [ -z "$ALPACA_SECRET_KEY" ]; then
@@ -366,6 +371,8 @@ upsert_env_var "AZURE_DASHBOARD_PLAN_NAME" "$DASHBOARD_PLAN_NAME"
 upsert_env_var "AZURE_DASHBOARD_SKU" "$DASHBOARD_SKU"
 upsert_env_var "AZURE_USE_KEY_VAULT" "$USE_KEY_VAULT"
 upsert_env_var "ORDER_BROKER" "$ORDER_BROKER"
+upsert_env_var "TASTYTRADE_IS_TEST" "$TASTYTRADE_IS_TEST"
+upsert_env_var "TASTYTRADE_DRY_RUN" "$TASTYTRADE_DRY_RUN"
 if [ "$USE_KEY_VAULT" = "true" ]; then
     upsert_env_var "AZURE_KEY_VAULT_NAME" "$KEY_VAULT_NAME"
     upsert_env_var "AZURE_KEY_VAULT_SECRET_PREFIX" "$KEY_VAULT_SECRET_PREFIX"

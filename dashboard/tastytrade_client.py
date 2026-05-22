@@ -41,6 +41,32 @@ def verify_credentials() -> dict:
         return {"ok": False, "error": str(e)}
 
 
+def verify_credentials_with_values(
+    *,
+    account_number: str,
+    client_secret: str,
+    refresh_token: str,
+    is_test: bool = True,
+) -> dict:
+    """Verify submitted Tastytrade credentials without requiring saved app settings."""
+    try:
+        config = TastytradeConfig(
+            account_number=account_number.strip(),
+            client_secret=client_secret.strip(),
+            refresh_token=refresh_token.strip(),
+            is_test=is_test,
+        )
+        client = TastytradeClient(config)
+        client.get_balance()
+        return {
+            "ok": True,
+            "account_id": account_number.strip(),
+            "paper": is_test,
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 def get_account_summary() -> dict:
     balance = _get_client().get_balance()
     env = read_env()

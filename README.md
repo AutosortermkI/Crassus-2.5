@@ -528,18 +528,19 @@ When Yahoo Finance is enabled (default), the screener:
 
 This script:
 1. Validates Azure CLI and Functions Core Tools are installed
-2. Reads all credentials and settings from `.env` (no hardcoded secrets)
+2. Creates a minimal `.env` when one does not exist, then reads any optional deployment settings from it
 3. Creates or updates: resource group, storage account, Function App, App Service plan, hosted dashboard Web App, and Azure Key Vault
-4. Stores hosted secrets in Azure Key Vault and pushes Key Vault references into the Function App and dashboard App Settings
+4. Stores any locally supplied hosted secrets in Azure Key Vault and pushes Key Vault references into the Function App and dashboard App Settings
 5. Enables managed identities on the Function App and dashboard so GUI-based setting changes can sync Azure app settings and hosted secrets safely
 6. Deploys the function code with `func azure functionapp publish`
 7. Deploys the dashboard code to Azure App Service and prints both shared URLs
+8. Lets you enter Tastytrade credentials from the hosted dashboard after deployment, without putting those broker secrets in local `.env`
 
 **Prerequisites:**
 - [Azure CLI](https://docs.microsoft.com/en-us/cli/azure/install-azure-cli) (`brew install azure-cli`)
 - [Azure Functions Core Tools v4](https://docs.microsoft.com/en-us/azure/azure-functions/functions-run-local) (`brew tap azure/functions && brew install azure-functions-core-tools@4`)
 - An active Azure subscription (`az login`)
-- A configured `.env` file (run the dashboard or `./setup.sh` first)
+- Optional: a `.env` file for custom Azure resource names or dashboard password settings. The deploy script creates a minimal one automatically if it is missing.
 
 ### What gets deployed
 
@@ -562,7 +563,7 @@ This script:
 
 ### Customizing resource names
 
-Set these values in `.env` before running `./deploy_azure.sh`:
+Set these values in `.env` before running `./deploy_azure.sh` only if you want to override the defaults:
 ```bash
 AZURE_RESOURCE_GROUP="CRG"
 AZURE_LOCATION="eastus"
@@ -584,15 +585,17 @@ AZURE_KEY_VAULT_SECRET_PREFIX=""
 
 All variables are configurable via the dashboard UI or directly in `.env`.
 
-### Required
+### Required for live broker execution
 
 | Variable | Description |
 |---|---|
 | `ORDER_BROKER` | `tastytrade` for the current default broker path, or `alpaca` for fallback |
-| `TASTYTRADE_ACCOUNT_NUMBER` | Tastytrade account number |
-| `TASTYTRADE_CLIENT_SECRET` | Tastytrade OAuth client secret |
-| `TASTYTRADE_REFRESH_TOKEN` | Tastytrade OAuth refresh token |
+| `TASTYTRADE_ACCOUNT_NUMBER` | Tastytrade account number; can be entered in the hosted dashboard after deployment |
+| `TASTYTRADE_CLIENT_SECRET` | Tastytrade OAuth client secret; can be entered in the hosted dashboard after deployment and stored in Key Vault |
+| `TASTYTRADE_REFRESH_TOKEN` | Tastytrade OAuth refresh token; can be entered in the hosted dashboard after deployment and stored in Key Vault |
 | `WEBHOOK_AUTH_TOKEN` | Shared secret (via `X-Webhook-Token` header or `?token=` query param) |
+
+The Azure deployment itself does not require Tastytrade credentials in local `.env`. If they are missing, deployment continues with `ORDER_BROKER=tastytrade`, `TASTYTRADE_IS_TEST=true`, and `TASTYTRADE_DRY_RUN=true`; the hosted dashboard will show broker credentials as missing until you enter them there.
 
 ### Optional (with defaults)
 
