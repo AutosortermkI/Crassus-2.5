@@ -31,8 +31,9 @@ if str(FUNCTION_APP_DIR) not in sys.path:
 from config_manager import (
     get_config, save_config, save_credentials, save_tastytrade_credentials,
     read_env, SECRET_KEYS,
-    ensure_dashboard_session_secret, ensure_webhook_token, get_azure_function_activity_url,
-    get_azure_function_trade_url, sync_broker_settings_to_azure, sync_settings_to_azure,
+    ensure_dashboard_session_secret, ensure_webhook_token,
+    get_azure_function_activity_urls, get_azure_function_trade_urls,
+    sync_broker_settings_to_azure, sync_settings_to_azure,
 )
 from alpaca_client import (
     get_account_summary, get_positions, get_recent_orders,
@@ -67,6 +68,11 @@ def _utcnow_iso() -> str:
 
 def _dashboard_receive_url() -> str:
     return request.host_url.rstrip("/") + "/api/webhook/receive"
+
+
+def _url_with_token(url: str, token: str) -> str:
+    separator = "&" if "?" in url else "?"
+    return f"{url}{separator}token={token}" if url else ""
 
 
 def _dashboard_access_passwords() -> tuple[str, str]:
@@ -104,7 +110,7 @@ def _login_redirect_target() -> str:
     return "/"
 
 
-def _forwarding_target() -> tuple[str, str]:
+def _forwarding_targets() -> tuple[str, dict]:
     env = read_env()
     # Default to "azure" when running on Azure App Service, "local" otherwise.
     default_target = "azure" if _HOSTED_DASHBOARD else "local"
@@ -112,12 +118,27 @@ def _forwarding_target() -> tuple[str, str]:
     custom_url = (env.get("WEBHOOK_FORWARD_URL") or "").strip()
 
     if target == "none":
-        return target, ""
+        return target, {}
     if target == "custom":
-        return target, custom_url
+        return target, {"default": custom_url}
     if target == "azure":
-        return target, get_azure_function_trade_url(env)
-    return "local", "http://localhost:7071/api/trade"
+        return target, get_azure_function_trade_urls(env)
+    return "local", {
+        "stock": "http://localhost:7071/api/trade-stock",
+        "options": "http://localhost:7071/api/trade-options",
+    }
+
+
+def _select_route_url(urls: dict, parsed: Optional[dict] = None) -> str:
+    if "default" in urls:
+        return urls["default"]
+    mode = str((parsed or {}).get("mode") or "stock").strip().lower()
+    return urls.get("options" if mode == "options" else "stock", "")
+
+
+def _forwarding_target(parsed: Optional[dict] = None) -> tuple[str, str]:
+    target, urls = _forwarding_targets()
+    return target, _select_route_url(urls, parsed)
 
 
 def _selected_broker() -> str:
@@ -154,22 +175,83 @@ def _json_bool(data: dict, key: str, default: bool) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _trade_endpoint_url() -> str:
-    target, url = _forwarding_target()
+def _trade_endpoint_urls() -> dict:
+    target, urls = _forwarding_targets()
     if target == "none":
-        return _dashboard_receive_url()
-    return url
+        receive_url = _dashboard_receive_url()
+        return {"stock": receive_url, "options": receive_url}
+    if "default" in urls:
+        return {"stock": urls["default"], "options": urls["default"]}
+    return urls
 
 
-def _activity_endpoint_url() -> str:
-    target, url = _forwarding_target()
+def _activity_endpoint_urls() -> dict:
+    target, urls = _forwarding_targets()
     if target == "none":
-        return ""
+        return {}
     if target == "azure":
-        return get_azure_function_activity_url(read_env())
-    if url.endswith("/trade"):
-        return url[:-6] + "/webhook-activity"
-    return ""
+        return get_azure_function_activity_urls(read_env())
+    if target == "local":
+        return {"local": "http://localhost:7071/api/webhook-activity"}
+    if "default" in urls and "/api/" in urls["default"]:
+        root, _, _ = urls["default"].partition("/api/")
+        return {"custom": f"{root}/api/webhook-activity"}
+    return {}
+
+
+def _activity_time(value: object) -> datetime:
+    if not value:
+        return datetime.min.replace(tzinfo=timezone.utc)
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed
+    except ValueError:
+        return datetime.min.replace(tzinfo=timezone.utc)
+
+
+def _merge_activity_snapshots(snapshots: list[tuple[str, dict]]) -> dict:
+    events = []
+    active_by_signature = {}
+
+    for source, body in snapshots:
+        for event in body.get("recent_events") or []:
+            item = dict(event)
+            item.setdefault("source_app", source)
+            events.append(item)
+
+        for active in body.get("active_webhooks") or []:
+            signature = active.get("signature") or f"{source}:{active.get('last_event_id', '')}"
+            existing = active_by_signature.get(signature)
+            if existing is None:
+                item = dict(active)
+                item.setdefault("source_app", source)
+                active_by_signature[signature] = item
+                continue
+
+            existing["count"] = int(existing.get("count") or 0) + int(active.get("count") or 0)
+            if _activity_time(active.get("last_seen")) > _activity_time(existing.get("last_seen")):
+                for key, value in active.items():
+                    if key != "count":
+                        existing[key] = value
+
+    events.sort(key=lambda event: _activity_time(event.get("received_at")), reverse=True)
+    active_webhooks = sorted(
+        active_by_signature.values(),
+        key=lambda item: _activity_time(item.get("last_seen")),
+        reverse=True,
+    )
+
+    return {
+        "latest_event": events[0] if events else None,
+        "recent_events": events[:20],
+        "active_webhooks": active_webhooks,
+        "counts": {
+            "recent_events": len(events[:20]),
+            "active_webhooks": len(active_webhooks),
+        },
+    }
 
 
 def _webhook_store_limits() -> tuple[int, int]:
@@ -187,7 +269,7 @@ def _webhook_store_limits() -> tuple[int, int]:
 
 def _forward_webhook(payload: dict, token: str, parsed: Optional[dict]) -> dict:
     """Forward a stored webhook to the configured execution endpoint."""
-    target, url = _forwarding_target()
+    target, url = _forwarding_target(parsed)
     result = {
         "target": target,
         "url": url,
@@ -658,17 +740,28 @@ def api_webhook_info():
     """Return dashboard webhook URL, auth token, and forwarding metadata."""
     try:
         token = ensure_webhook_token()
-        forward_target, forward_url = _forwarding_target()
-        receive_url = _trade_endpoint_url()
+        forward_target, forward_urls = _forwarding_targets()
+        receive_urls = _trade_endpoint_urls()
+        stock_url = receive_urls.get("stock", "")
+        options_url = receive_urls.get("options", stock_url)
+        stock_full_url = _url_with_token(stock_url, token)
+        options_full_url = _url_with_token(options_url, token)
         return jsonify({
             "status": "ok",
-            "local_url": receive_url,
-            "full_url": f"{receive_url}?token={token}",
+            "stock_url": stock_url,
+            "options_url": options_url,
+            "stock_full_url": stock_full_url,
+            "options_full_url": options_full_url,
+            "local_url": stock_url,
+            "full_url": stock_full_url,
             "auth_token": token,
             "has_token": True,
             "forward_target": forward_target,
-            "forward_url": forward_url,
-            "activity_url": _activity_endpoint_url(),
+            "forward_url": _select_route_url(forward_urls),
+            "forward_urls": forward_urls,
+            "activity_url": _activity_endpoint_urls().get("stock", ""),
+            "activity_urls": _activity_endpoint_urls(),
+            "dashboard_receive_url": _dashboard_receive_url(),
             "dashboard_url": request.host_url.rstrip("/"),
         })
     except Exception as e:
@@ -702,24 +795,35 @@ def api_webhook_activity():
     """Return the recent webhook snapshot plus grouped active webhooks."""
     try:
         active_minutes, _ = _webhook_store_limits()
-        activity_url = _activity_endpoint_url()
-        if activity_url:
+        activity_urls = _activity_endpoint_urls()
+        if activity_urls:
             token = ensure_webhook_token()
-            response = http_requests.get(
-                activity_url,
-                params={"token": token, "active_minutes": active_minutes, "limit": 20},
-                timeout=10,
-            )
-            if response.headers.get("content-type", "").startswith("application/json"):
-                body = response.json()
-            else:
-                body = {"error": response.text}
-            if response.status_code >= 400:
-                return jsonify({
-                    "status": "error",
-                    "message": body.get("error") or f"Activity endpoint returned {response.status_code}",
-                }), response.status_code
-            return jsonify({"status": "ok", **body})
+            snapshots = []
+            failures = []
+            for source, activity_url in activity_urls.items():
+                response = http_requests.get(
+                    activity_url,
+                    params={"token": token, "active_minutes": active_minutes, "limit": 20},
+                    timeout=10,
+                )
+                if response.headers.get("content-type", "").startswith("application/json"):
+                    body = response.json()
+                else:
+                    body = {"error": response.text}
+                if response.status_code >= 400:
+                    failures.append(body.get("error") or f"{source} activity returned {response.status_code}")
+                    continue
+                snapshots.append((source, body))
+
+            if snapshots:
+                merged = _merge_activity_snapshots(snapshots)
+                if failures:
+                    merged["warnings"] = failures
+                return jsonify({"status": "ok", **merged})
+            return jsonify({
+                "status": "error",
+                "message": "; ".join(failures) or "Activity endpoints returned no data",
+            }), 502
 
         snapshot = get_activity_snapshot(active_window_minutes=active_minutes)
         return jsonify({"status": "ok", **snapshot})

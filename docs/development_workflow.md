@@ -88,6 +88,7 @@ git push origin prod-YYYY-MM-DD
 - Options alerts use `/api/trade-options`.
 - `/api/trade` is retained temporarily as a legacy route and returns a deprecation warning.
 - Dev and prod webhook URLs are different; copy the URL from the matching dashboard or deploy output.
+- The dashboard Webhooks tab should display separate stock/share and options URLs. In Azure mode it should point stock/share alerts at the stock Function App and options alerts at the options Function App, then merge activity from both apps in the Active Webhooks view.
 
 ## Broker Routing Controls
 

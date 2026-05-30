@@ -56,6 +56,34 @@ def test_get_azure_settings_exposes_dashboard_hosting_fields(tmp_path, monkeypat
     assert settings["dashboard_sku"] == "P1V3"
 
 
+def test_split_trade_urls_use_environment_specific_function_apps(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "ENVIRONMENT_NAME=dev\n"
+        "AZURE_FUNCTION_APP_NAME=legacy-app\n"
+        "AZURE_DEV_STOCK_FUNCTION_BASE_URL=https://dev-stock.azurewebsites.net\n"
+        "AZURE_DEV_OPTIONS_FUNCTION_BASE_URL=https://dev-options.azurewebsites.net\n"
+        "AZURE_PROD_STOCK_FUNCTION_BASE_URL=https://prod-stock.azurewebsites.net\n"
+        "AZURE_PROD_OPTIONS_FUNCTION_BASE_URL=https://prod-options.azurewebsites.net\n"
+    )
+
+    monkeypatch.setattr(config_manager, "ENV_PATH", env_path)
+    monkeypatch.delenv("WEBSITE_SITE_NAME", raising=False)
+
+    urls = config_manager.get_azure_function_trade_urls()
+    activity_urls = config_manager.get_azure_function_activity_urls()
+
+    assert urls == {
+        "stock": "https://dev-stock.azurewebsites.net/api/trade-stock",
+        "options": "https://dev-options.azurewebsites.net/api/trade-options",
+    }
+    assert activity_urls == {
+        "stock": "https://dev-stock.azurewebsites.net/api/webhook-activity",
+        "options": "https://dev-options.azurewebsites.net/api/webhook-activity",
+    }
+    assert "legacy-app" not in " ".join(urls.values())
+
+
 def test_get_azure_settings_defaults_key_vault_name_from_storage_account(tmp_path, monkeypatch):
     env_path = tmp_path / ".env"
     env_path.write_text("AZURE_STORAGE_ACCOUNT=crassusstg03121938\n")

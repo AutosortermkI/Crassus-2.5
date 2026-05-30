@@ -219,8 +219,10 @@
             .then(r => r.json())
             .then(data => {
                 if (data.status !== 'ok') throw new Error(data.message || 'Could not load webhook info');
-                document.getElementById('webhookUrl').textContent = data.local_url;
-                document.getElementById('webhookFullUrl').textContent = data.full_url;
+                document.getElementById('webhookStockUrl').textContent = data.stock_url || data.local_url || '';
+                document.getElementById('webhookOptionsUrl').textContent = data.options_url || data.local_url || '';
+                document.getElementById('webhookStockFullUrl').textContent = data.stock_full_url || data.full_url || '';
+                document.getElementById('webhookOptionsFullUrl').textContent = data.options_full_url || data.full_url || '';
                 document.getElementById('webhookToken').textContent = data.auth_token;
 
                 const target = document.getElementById('webhookForwardTarget');
@@ -231,7 +233,16 @@
                     pill.textContent = 'Store Only';
                     pill.className = 'status-pill status-warning';
                 } else {
-                    target.textContent = data.forward_target.toUpperCase() + ' \u2192 ' + data.forward_url;
+                    const forwardUrls = data.forward_urls || {};
+                    if (forwardUrls.stock || forwardUrls.options) {
+                        target.textContent = [
+                            data.forward_target.toUpperCase(),
+                            'Stock / Shares -> ' + (forwardUrls.stock || data.forward_url || ''),
+                            'Options -> ' + (forwardUrls.options || data.forward_url || ''),
+                        ].join('\n');
+                    } else {
+                        target.textContent = data.forward_target.toUpperCase() + ' -> ' + data.forward_url;
+                    }
                     pill.textContent = 'Forwarding: ' + data.forward_target;
                     pill.className = 'status-pill status-success';
                 }

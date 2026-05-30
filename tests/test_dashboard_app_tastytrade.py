@@ -192,3 +192,125 @@ def test_config_brokers_rejects_invalid_values(tmp_path, monkeypatch):
     assert body["status"] == "error"
     assert "options_broker" in body["message"]
     module.sync_broker_settings_to_azure.assert_not_called()
+
+
+def test_webhook_info_returns_split_stock_and_options_urls(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "ENVIRONMENT_NAME=dev\n"
+        "WEBHOOK_AUTH_TOKEN=token-123\n"
+        "WEBHOOK_FORWARD_TARGET=azure\n"
+        "AZURE_DEV_STOCK_FUNCTION_BASE_URL=https://dev-stock.azurewebsites.net\n"
+        "AZURE_DEV_OPTIONS_FUNCTION_BASE_URL=https://dev-options.azurewebsites.net\n"
+    )
+    monkeypatch.setattr(config_manager, "ENV_PATH", env_path)
+    monkeypatch.delenv("WEBSITE_SITE_NAME", raising=False)
+
+    module = _load_app_module("dashboard_app_split_webhook_info_test")
+
+    response = module.app.test_client().get("/api/webhook/info")
+    body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["stock_url"] == "https://dev-stock.azurewebsites.net/api/trade-stock"
+    assert body["options_url"] == "https://dev-options.azurewebsites.net/api/trade-options"
+    assert body["stock_full_url"] == "https://dev-stock.azurewebsites.net/api/trade-stock?token=token-123"
+    assert body["options_full_url"] == "https://dev-options.azurewebsites.net/api/trade-options?token=token-123"
+    assert body["forward_urls"] == {
+        "stock": "https://dev-stock.azurewebsites.net/api/trade-stock",
+        "options": "https://dev-options.azurewebsites.net/api/trade-options",
+    }
+    assert body["activity_urls"] == {
+        "stock": "https://dev-stock.azurewebsites.net/api/webhook-activity",
+        "options": "https://dev-options.azurewebsites.net/api/webhook-activity",
+    }
+    assert body["local_url"] == body["stock_url"]
+    assert body["full_url"] == body["stock_full_url"]
+
+
+def test_dashboard_forward_uses_options_endpoint_for_options_mode(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "ENVIRONMENT_NAME=dev\n"
+        "WEBHOOK_FORWARD_TARGET=azure\n"
+        "AZURE_DEV_STOCK_FUNCTION_BASE_URL=https://dev-stock.azurewebsites.net\n"
+        "AZURE_DEV_OPTIONS_FUNCTION_BASE_URL=https://dev-options.azurewebsites.net\n"
+    )
+    monkeypatch.setattr(config_manager, "ENV_PATH", env_path)
+    monkeypatch.delenv("WEBSITE_SITE_NAME", raising=False)
+
+    module = _load_app_module("dashboard_app_split_forward_test")
+    response = MagicMock()
+    response.status_code = 200
+    response.text = "ok"
+    response.headers = {"content-type": "text/plain"}
+    post = MagicMock(return_value=response)
+    monkeypatch.setattr(module.http_requests, "post", post)
+
+    result = module._forward_webhook({"content": "payload"}, "token-123", {"mode": "options"})
+
+    assert result["ok"] is True
+    assert result["url"] == "https://dev-options.azurewebsites.net/api/trade-options"
+    post.assert_called_once()
+    assert post.call_args.args[0] == "https://dev-options.azurewebsites.net/api/trade-options"
+
+
+def test_webhook_activity_merges_split_function_results(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "ENVIRONMENT_NAME=dev\n"
+        "WEBHOOK_AUTH_TOKEN=token-123\n"
+        "WEBHOOK_FORWARD_TARGET=azure\n"
+        "AZURE_DEV_STOCK_FUNCTION_BASE_URL=https://dev-stock.azurewebsites.net\n"
+        "AZURE_DEV_OPTIONS_FUNCTION_BASE_URL=https://dev-options.azurewebsites.net\n"
+    )
+    monkeypatch.setattr(config_manager, "ENV_PATH", env_path)
+    monkeypatch.delenv("WEBSITE_SITE_NAME", raising=False)
+
+    module = _load_app_module("dashboard_app_split_activity_test")
+
+    def fake_get(url, **kwargs):
+        mode = "options" if "dev-options" in url else "stock"
+        body = {
+            "latest_event": {
+                "id": f"{mode}-latest",
+                "received_at": f"2026-05-30T04:0{1 if mode == 'stock' else 2}:00+00:00",
+                "parsed": {"ticker": "AAPL", "side": "buy", "strategy": "demo", "mode": mode},
+            },
+            "recent_events": [
+                {
+                    "id": f"{mode}-1",
+                    "received_at": f"2026-05-30T04:0{1 if mode == 'stock' else 2}:00+00:00",
+                    "signature": f"AAPL:buy:demo:{mode}",
+                    "parsed": {"ticker": "AAPL", "side": "buy", "strategy": "demo", "mode": mode},
+                }
+            ],
+            "active_webhooks": [
+                {
+                    "signature": f"AAPL:buy:demo:{mode}",
+                    "ticker": "AAPL",
+                    "side": "buy",
+                    "strategy": "demo",
+                    "mode": mode,
+                    "last_seen": f"2026-05-30T04:0{1 if mode == 'stock' else 2}:00+00:00",
+                    "count": 1,
+                }
+            ],
+            "counts": {"recent_events": 1, "active_webhooks": 1},
+        }
+        response = MagicMock()
+        response.status_code = 200
+        response.headers = {"content-type": "application/json"}
+        response.json.return_value = body
+        return response
+
+    monkeypatch.setattr(module.http_requests, "get", fake_get)
+
+    response = module.app.test_client().get("/api/webhook/activity")
+    body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["status"] == "ok"
+    assert [event["parsed"]["mode"] for event in body["recent_events"]] == ["options", "stock"]
+    assert body["latest_event"]["id"] == "options-1"
+    assert body["counts"] == {"recent_events": 2, "active_webhooks": 2}

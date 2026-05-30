@@ -40,6 +40,10 @@ ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
 AZURE_DEFAULTS = {
     "AZURE_FUNCTION_APP_NAME": "crassus-25",
     "AZURE_FUNCTION_BASE_URL": "",
+    "AZURE_STOCK_FUNCTION_APP_NAME": "",
+    "AZURE_OPTIONS_FUNCTION_APP_NAME": "",
+    "AZURE_STOCK_FUNCTION_BASE_URL": "",
+    "AZURE_OPTIONS_FUNCTION_BASE_URL": "",
     "AZURE_SUBSCRIPTION_ID": "",
     "AZURE_RESOURCE_GROUP": "CRG",
     "AZURE_LOCATION": "eastus",
@@ -888,6 +892,60 @@ def get_azure_settings(overrides: Optional[dict] = None) -> dict:
     return _build_azure_settings(env)
 
 
+def _split_function_base_url(values: dict, route_kind: str) -> str:
+    """Return the stock/options Function App base URL for the current environment."""
+    current_env = environment_name(values)
+    prefix = "AZURE_PROD" if current_env == "prod" else "AZURE_DEV"
+    kind = route_kind.upper()
+
+    base_url = (
+        _env_value(values, f"{prefix}_{kind}_FUNCTION_BASE_URL")
+        or _env_value(values, f"AZURE_{kind}_FUNCTION_BASE_URL")
+    ).rstrip("/")
+    if base_url:
+        return base_url
+
+    app_name = (
+        _env_value(values, f"{prefix}_{kind}_FUNCTION_APP_NAME")
+        or _env_value(values, f"AZURE_{kind}_FUNCTION_APP_NAME")
+    )
+    if app_name:
+        return f"https://{app_name}.azurewebsites.net"
+
+    return _build_azure_settings(values)["function_base_url"].rstrip("/")
+
+
+def _with_api_route(base_url: str, route: str) -> str:
+    base = (base_url or "").rstrip("/")
+    if not base:
+        return ""
+    expected_suffix = f"/api/{route}"
+    if base.endswith(expected_suffix):
+        return base
+    if "/api/" in base:
+        root, _, _ = base.partition("/api/")
+        return f"{root}/api/{route}"
+    return f"{base}/api/{route}"
+
+
+def get_azure_function_trade_urls(env: Optional[dict] = None) -> dict:
+    """Return split Azure trade endpoint URLs for stock/share and options alerts."""
+    values = env or read_env()
+    return {
+        "stock": _with_api_route(_split_function_base_url(values, "stock"), "trade-stock"),
+        "options": _with_api_route(_split_function_base_url(values, "options"), "trade-options"),
+    }
+
+
+def get_azure_function_activity_urls(env: Optional[dict] = None) -> dict:
+    """Return split Azure webhook-activity endpoint URLs."""
+    values = env or read_env()
+    return {
+        "stock": _with_api_route(_split_function_base_url(values, "stock"), "webhook-activity"),
+        "options": _with_api_route(_split_function_base_url(values, "options"), "webhook-activity"),
+    }
+
+
 def environment_name(env: Optional[dict] = None) -> str:
     """Return the current dashboard environment, constrained to dev/prod."""
     values = env or read_env()
@@ -1003,20 +1061,13 @@ def sync_broker_settings_to_azure(updates: dict) -> dict:
 
 
 def get_azure_function_trade_url(env: Optional[dict] = None) -> str:
-    """Return the configured Azure trade endpoint URL."""
-    settings = get_azure_settings(env)
-    base_url = settings["function_base_url"]
-    if base_url.endswith("/api/trade"):
-        return base_url
-    return f"{base_url}/api/trade"
+    """Return the stock Azure trade endpoint URL for legacy callers."""
+    return get_azure_function_trade_urls(env)["stock"]
 
 
 def get_azure_function_activity_url(env: Optional[dict] = None) -> str:
-    """Return the configured Azure activity endpoint URL."""
-    trade_url = get_azure_function_trade_url(env)
-    if trade_url.endswith("/api/trade"):
-        return trade_url[:-6] + "/webhook-activity"
-    return ""
+    """Return the stock Azure activity endpoint URL for legacy callers."""
+    return get_azure_function_activity_urls(env)["stock"]
 
 
 def uses_azure_key_vault(settings: dict) -> bool:
