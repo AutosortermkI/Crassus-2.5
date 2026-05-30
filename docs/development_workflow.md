@@ -23,6 +23,7 @@ Shared dev:
 - Stock Function App: `crassus-dev-stock`
 - Options Function App: `crassus-dev-options`
 - Dashboard Web App: `crassus-dev-dashboard`
+- If the default dashboard App Service plan has no quota, set `AZURE_DEV_DASHBOARD_RESOURCE_GROUP`, `AZURE_DEV_DASHBOARD_PLAN_RESOURCE_GROUP`, and `AZURE_DEV_DASHBOARD_PLAN_NAME` to an existing non-exhausted plan before deploying.
 
 Production:
 

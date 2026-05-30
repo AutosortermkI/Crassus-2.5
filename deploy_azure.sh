@@ -178,25 +178,55 @@ ensure_function_app() {
 }
 
 ensure_dashboard_app() {
-    if az webapp show --name "$DASHBOARD_APP_NAME" --resource-group "$RESOURCE_GROUP" --output none >/dev/null 2>&1; then
+    if az webapp show --name "$DASHBOARD_APP_NAME" --resource-group "$DASHBOARD_RESOURCE_GROUP" --output none >/dev/null 2>&1; then
         echo "[OK] Dashboard Web App \"$DASHBOARD_APP_NAME\" already exists."
         return
     fi
-    echo "Creating dashboard plan \"$DASHBOARD_PLAN_NAME\"..."
-    az appservice plan create \
-        --name "$DASHBOARD_PLAN_NAME" \
-        --resource-group "$RESOURCE_GROUP" \
-        --location "$LOCATION" \
-        --is-linux \
-        --sku "$DASHBOARD_SKU" \
-        --output none
+
+    local plan_id
+    plan_id="$(dashboard_plan_id)"
+    if [ -n "$plan_id" ]; then
+        echo "[OK] Using existing dashboard plan \"$DASHBOARD_PLAN_NAME\" in \"$DASHBOARD_PLAN_RESOURCE_GROUP\"."
+    else
+        echo "Creating dashboard plan \"$DASHBOARD_PLAN_NAME\" in \"$DASHBOARD_PLAN_RESOURCE_GROUP\"..."
+        az appservice plan create \
+            --name "$DASHBOARD_PLAN_NAME" \
+            --resource-group "$DASHBOARD_PLAN_RESOURCE_GROUP" \
+            --location "$DASHBOARD_LOCATION" \
+            --is-linux \
+            --sku "$DASHBOARD_SKU" \
+            --output none
+        plan_id="$(dashboard_plan_id)"
+    fi
+
     echo "Creating Dashboard Web App \"$DASHBOARD_APP_NAME\"..."
     az webapp create \
-        --resource-group "$RESOURCE_GROUP" \
-        --plan "$DASHBOARD_PLAN_NAME" \
+        --resource-group "$DASHBOARD_RESOURCE_GROUP" \
+        --plan "$plan_id" \
         --name "$DASHBOARD_APP_NAME" \
         --runtime "PYTHON:$PYTHON_VERSION" \
         --output none
+}
+
+dashboard_plan_id() {
+    az appservice plan show \
+        --name "$DASHBOARD_PLAN_NAME" \
+        --resource-group "$DASHBOARD_PLAN_RESOURCE_GROUP" \
+        --query id \
+        --output tsv 2>/dev/null || true
+}
+
+ensure_dashboard_can_start() {
+    local state
+    state="$(az webapp show --name "$DASHBOARD_APP_NAME" --resource-group "$DASHBOARD_RESOURCE_GROUP" --query state -o tsv 2>/dev/null || true)"
+    if [ "$state" = "QuotaExceeded" ]; then
+        echo "[ERROR] Dashboard Web App is in QuotaExceeded state."
+        echo "        App:  $DASHBOARD_APP_NAME"
+        echo "        Plan: $DASHBOARD_PLAN_NAME ($DASHBOARD_PLAN_RESOURCE_GROUP)"
+        echo "        Choose an existing non-exhausted plan via AZURE_${DEPLOY_ENV^^}_DASHBOARD_PLAN_NAME"
+        echo "        and AZURE_${DEPLOY_ENV^^}_DASHBOARD_PLAN_RESOURCE_GROUP, or scale the plan before deploying."
+        exit 1
+    fi
 }
 
 CURRENT_GIT_BRANCH="$(git -C "$SCRIPT_DIR" branch --show-current 2>/dev/null || true)"
@@ -302,6 +332,10 @@ if [ "$DEPLOY_ENV" = "prod" ]; then
     STOCK_FUNCTION_APP_NAME="$(env_default "$(load_env_var "AZURE_PROD_STOCK_FUNCTION_APP_NAME")" "crassus-prod-stock")"
     OPTIONS_FUNCTION_APP_NAME="$(env_default "$(load_env_var "AZURE_PROD_OPTIONS_FUNCTION_APP_NAME")" "crassus-prod-options")"
     DASHBOARD_APP_NAME="$(env_default "$(load_env_var "AZURE_PROD_DASHBOARD_APP_NAME")" "crassus-prod-dashboard")"
+    DASHBOARD_RESOURCE_GROUP="$(env_default "$(load_env_var "AZURE_PROD_DASHBOARD_RESOURCE_GROUP")" "$(env_default "$(load_env_var "AZURE_DASHBOARD_RESOURCE_GROUP")" "$RESOURCE_GROUP")")"
+    DASHBOARD_PLAN_RESOURCE_GROUP="$(env_default "$(load_env_var "AZURE_PROD_DASHBOARD_PLAN_RESOURCE_GROUP")" "$(env_default "$(load_env_var "AZURE_DASHBOARD_PLAN_RESOURCE_GROUP")" "$DASHBOARD_RESOURCE_GROUP")")"
+    DASHBOARD_PLAN_NAME="$(env_default "$(load_env_var "AZURE_PROD_DASHBOARD_PLAN_NAME")" "$(env_default "$(load_env_var "AZURE_DASHBOARD_PLAN_NAME")" "${DASHBOARD_APP_NAME}-plan")")"
+    DASHBOARD_LOCATION="$(env_default "$(load_env_var "AZURE_PROD_DASHBOARD_LOCATION")" "$(env_default "$(load_env_var "AZURE_DASHBOARD_LOCATION")" "$LOCATION")")"
     STOCK_FUNCTION_BASE_URL="$(env_default "$(load_env_var "AZURE_PROD_STOCK_FUNCTION_BASE_URL")" "https://${STOCK_FUNCTION_APP_NAME}.azurewebsites.net")"
     OPTIONS_FUNCTION_BASE_URL="$(env_default "$(load_env_var "AZURE_PROD_OPTIONS_FUNCTION_BASE_URL")" "https://${OPTIONS_FUNCTION_APP_NAME}.azurewebsites.net")"
     DASHBOARD_BASE_URL="$(env_default "$(load_env_var "AZURE_PROD_DASHBOARD_BASE_URL")" "https://${DASHBOARD_APP_NAME}.azurewebsites.net")"
@@ -309,17 +343,20 @@ else
     STOCK_FUNCTION_APP_NAME="$(env_default "$(load_env_var "AZURE_DEV_STOCK_FUNCTION_APP_NAME")" "crassus-dev-stock")"
     OPTIONS_FUNCTION_APP_NAME="$(env_default "$(load_env_var "AZURE_DEV_OPTIONS_FUNCTION_APP_NAME")" "crassus-dev-options")"
     DASHBOARD_APP_NAME="$(env_default "$(load_env_var "AZURE_DEV_DASHBOARD_APP_NAME")" "crassus-dev-dashboard")"
+    DASHBOARD_RESOURCE_GROUP="$(env_default "$(load_env_var "AZURE_DEV_DASHBOARD_RESOURCE_GROUP")" "$(env_default "$(load_env_var "AZURE_DASHBOARD_RESOURCE_GROUP")" "$RESOURCE_GROUP")")"
+    DASHBOARD_PLAN_RESOURCE_GROUP="$(env_default "$(load_env_var "AZURE_DEV_DASHBOARD_PLAN_RESOURCE_GROUP")" "$(env_default "$(load_env_var "AZURE_DASHBOARD_PLAN_RESOURCE_GROUP")" "$DASHBOARD_RESOURCE_GROUP")")"
+    DASHBOARD_PLAN_NAME="$(env_default "$(load_env_var "AZURE_DEV_DASHBOARD_PLAN_NAME")" "$(env_default "$(load_env_var "AZURE_DASHBOARD_PLAN_NAME")" "${DASHBOARD_APP_NAME}-plan")")"
+    DASHBOARD_LOCATION="$(env_default "$(load_env_var "AZURE_DEV_DASHBOARD_LOCATION")" "$(env_default "$(load_env_var "AZURE_DASHBOARD_LOCATION")" "$LOCATION")")"
     STOCK_FUNCTION_BASE_URL="$(env_default "$(load_env_var "AZURE_DEV_STOCK_FUNCTION_BASE_URL")" "https://${STOCK_FUNCTION_APP_NAME}.azurewebsites.net")"
     OPTIONS_FUNCTION_BASE_URL="$(env_default "$(load_env_var "AZURE_DEV_OPTIONS_FUNCTION_BASE_URL")" "https://${OPTIONS_FUNCTION_APP_NAME}.azurewebsites.net")"
     DASHBOARD_BASE_URL="$(env_default "$(load_env_var "AZURE_DEV_DASHBOARD_BASE_URL")" "https://${DASHBOARD_APP_NAME}.azurewebsites.net")"
 fi
 
-DASHBOARD_PLAN_NAME="$(env_default "$(load_env_var "AZURE_DASHBOARD_PLAN_NAME")" "${DASHBOARD_APP_NAME}-plan")"
-
 echo "Target Azure apps:"
 echo "  Stock Function App:   $STOCK_FUNCTION_APP_NAME"
 echo "  Options Function App: $OPTIONS_FUNCTION_APP_NAME"
-echo "  Dashboard Web App:    $DASHBOARD_APP_NAME"
+echo "  Dashboard Web App:    $DASHBOARD_APP_NAME ($DASHBOARD_RESOURCE_GROUP)"
+echo "  Dashboard Plan:       $DASHBOARD_PLAN_NAME ($DASHBOARD_PLAN_RESOURCE_GROUP)"
 echo
 
 echo "Checking Azure login..."
@@ -328,6 +365,14 @@ echo "[OK] Azure login ready."
 
 echo "Ensuring resource group \"$RESOURCE_GROUP\" exists..."
 az group create --name "$RESOURCE_GROUP" --location "$LOCATION" --output none
+if [ "$DASHBOARD_RESOURCE_GROUP" != "$RESOURCE_GROUP" ]; then
+    echo "Ensuring dashboard resource group \"$DASHBOARD_RESOURCE_GROUP\" exists..."
+    az group create --name "$DASHBOARD_RESOURCE_GROUP" --location "$DASHBOARD_LOCATION" --output none
+fi
+if [ "$DASHBOARD_PLAN_RESOURCE_GROUP" != "$RESOURCE_GROUP" ] && [ "$DASHBOARD_PLAN_RESOURCE_GROUP" != "$DASHBOARD_RESOURCE_GROUP" ]; then
+    echo "Ensuring dashboard plan resource group \"$DASHBOARD_PLAN_RESOURCE_GROUP\" exists..."
+    az group create --name "$DASHBOARD_PLAN_RESOURCE_GROUP" --location "$DASHBOARD_LOCATION" --output none
+fi
 
 if az storage account show --name "$STORAGE_ACCOUNT" --resource-group "$RESOURCE_GROUP" --output none >/dev/null 2>&1; then
     echo "[OK] Storage account \"$STORAGE_ACCOUNT\" already exists."
@@ -344,6 +389,7 @@ fi
 ensure_function_app "$STOCK_FUNCTION_APP_NAME"
 ensure_function_app "$OPTIONS_FUNCTION_APP_NAME"
 ensure_dashboard_app
+ensure_dashboard_can_start
 
 COMMON_FUNCTION_SETTINGS=(
     "ENVIRONMENT_NAME=$DEPLOY_ENV"
@@ -355,6 +401,9 @@ COMMON_FUNCTION_SETTINGS=(
     "OPTIONS_WEBHOOK_AUTH_TOKEN=$OPTIONS_WEBHOOK_AUTH_TOKEN"
     "ENABLE_TASTYTRADE_OPTIONS=${ENABLE_TASTYTRADE_OPTIONS:-false}"
     "OPTIONS_ALLOW_FALLBACK_TO_ALPACA=${OPTIONS_ALLOW_FALLBACK_TO_ALPACA:-false}"
+    "AzureWebJobsFeatureFlags=EnableWorkerIndexing"
+    "SCM_DO_BUILD_DURING_DEPLOYMENT=true"
+    "ENABLE_ORYX_BUILD=true"
     "DEPLOYED_GIT_BRANCH=$CURRENT_GIT_BRANCH"
     "DEPLOYED_GIT_SHA=$CURRENT_GIT_SHA"
     "DEPLOYED_AT_UTC=$DEPLOYED_AT_UTC"
@@ -401,6 +450,9 @@ DASHBOARD_SETTINGS=(
     "STOCK_WEBHOOK_AUTH_TOKEN=$STOCK_WEBHOOK_AUTH_TOKEN"
     "OPTIONS_WEBHOOK_AUTH_TOKEN=$OPTIONS_WEBHOOK_AUTH_TOKEN"
     "AZURE_RESOURCE_GROUP=$RESOURCE_GROUP"
+    "AZURE_DASHBOARD_RESOURCE_GROUP=$DASHBOARD_RESOURCE_GROUP"
+    "AZURE_DASHBOARD_PLAN_RESOURCE_GROUP=$DASHBOARD_PLAN_RESOURCE_GROUP"
+    "AZURE_DASHBOARD_PLAN_NAME=$DASHBOARD_PLAN_NAME"
     "AZURE_STOCK_FUNCTION_APP_NAME=$STOCK_FUNCTION_APP_NAME"
     "AZURE_OPTIONS_FUNCTION_APP_NAME=$OPTIONS_FUNCTION_APP_NAME"
     "AZURE_STOCK_FUNCTION_BASE_URL=$STOCK_FUNCTION_BASE_URL"
@@ -409,6 +461,8 @@ DASHBOARD_SETTINGS=(
     "DEPLOYED_GIT_BRANCH=$CURRENT_GIT_BRANCH"
     "DEPLOYED_GIT_SHA=$CURRENT_GIT_SHA"
     "DEPLOYED_AT_UTC=$DEPLOYED_AT_UTC"
+    "SCM_DO_BUILD_DURING_DEPLOYMENT=true"
+    "ENABLE_ORYX_BUILD=true"
 )
 add_if_set DASHBOARD_SETTINGS "DASHBOARD_ACCESS_PASSWORD" "$DASHBOARD_ACCESS_PASSWORD"
 add_if_set DASHBOARD_SETTINGS "DASHBOARD_ACCESS_PASSWORD_HASH" "$DASHBOARD_ACCESS_PASSWORD_HASH"
@@ -420,6 +474,9 @@ if [ "$DEPLOY_ENV" = "dev" ]; then
         "AZURE_DEV_STOCK_FUNCTION_APP_NAME=$STOCK_FUNCTION_APP_NAME"
         "AZURE_DEV_OPTIONS_FUNCTION_APP_NAME=$OPTIONS_FUNCTION_APP_NAME"
         "AZURE_DEV_DASHBOARD_APP_NAME=$DASHBOARD_APP_NAME"
+        "AZURE_DEV_DASHBOARD_RESOURCE_GROUP=$DASHBOARD_RESOURCE_GROUP"
+        "AZURE_DEV_DASHBOARD_PLAN_RESOURCE_GROUP=$DASHBOARD_PLAN_RESOURCE_GROUP"
+        "AZURE_DEV_DASHBOARD_PLAN_NAME=$DASHBOARD_PLAN_NAME"
         "AZURE_DEV_STOCK_FUNCTION_BASE_URL=$STOCK_FUNCTION_BASE_URL"
         "AZURE_DEV_OPTIONS_FUNCTION_BASE_URL=$OPTIONS_FUNCTION_BASE_URL"
         "AZURE_DEV_DASHBOARD_BASE_URL=$DASHBOARD_BASE_URL"
@@ -429,6 +486,9 @@ else
         "AZURE_PROD_STOCK_FUNCTION_APP_NAME=$STOCK_FUNCTION_APP_NAME"
         "AZURE_PROD_OPTIONS_FUNCTION_APP_NAME=$OPTIONS_FUNCTION_APP_NAME"
         "AZURE_PROD_DASHBOARD_APP_NAME=$DASHBOARD_APP_NAME"
+        "AZURE_PROD_DASHBOARD_RESOURCE_GROUP=$DASHBOARD_RESOURCE_GROUP"
+        "AZURE_PROD_DASHBOARD_PLAN_RESOURCE_GROUP=$DASHBOARD_PLAN_RESOURCE_GROUP"
+        "AZURE_PROD_DASHBOARD_PLAN_NAME=$DASHBOARD_PLAN_NAME"
         "AZURE_PROD_STOCK_FUNCTION_BASE_URL=$STOCK_FUNCTION_BASE_URL"
         "AZURE_PROD_OPTIONS_FUNCTION_BASE_URL=$OPTIONS_FUNCTION_BASE_URL"
         "AZURE_PROD_DASHBOARD_BASE_URL=$DASHBOARD_BASE_URL"
@@ -452,13 +512,13 @@ az functionapp config appsettings set \
 echo "Pushing dashboard Web App settings..."
 az webapp config appsettings set \
     --name "$DASHBOARD_APP_NAME" \
-    --resource-group "$RESOURCE_GROUP" \
+    --resource-group "$DASHBOARD_RESOURCE_GROUP" \
     --settings "${DASHBOARD_SETTINGS[@]}" \
     --output none
 
 az webapp config set \
     --name "$DASHBOARD_APP_NAME" \
-    --resource-group "$RESOURCE_GROUP" \
+    --resource-group "$DASHBOARD_RESOURCE_GROUP" \
     --linux-fx-version "PYTHON|$PYTHON_VERSION" \
     --startup-file "$DASHBOARD_STARTUP_COMMAND" \
     --output none
@@ -473,7 +533,7 @@ DASHBOARD_ZIP="$SCRIPT_DIR/.azure/dashboard-${DEPLOY_ENV}.zip"
 create_dashboard_package "$DASHBOARD_ZIP"
 echo "Deploying dashboard package..."
 az webapp deploy \
-    --resource-group "$RESOURCE_GROUP" \
+    --resource-group "$DASHBOARD_RESOURCE_GROUP" \
     --name "$DASHBOARD_APP_NAME" \
     --src-path "$DASHBOARD_ZIP" \
     --type zip \

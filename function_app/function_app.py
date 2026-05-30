@@ -88,15 +88,11 @@ logger = get_logger(__name__)
 # ------------------------------------------------------------------
 # App settings (Environment Variables)
 # ------------------------------------------------------------------
-ALPACA_API_KEY    = os.environ.get("ALPACA_API_KEY", "")
-ALPACA_SECRET_KEY = os.environ.get("ALPACA_SECRET_KEY", "")
-ALPACA_PAPER      = os.environ.get("ALPACA_PAPER", "true").lower() == "true"
 WEBHOOK_AUTH_TOKEN = os.environ.get("WEBHOOK_AUTH_TOKEN", "")
 ALLOWED_BROKERS = {"alpaca", "tastytrade"}
 
-# Alpaca client -- reused across requests for connection pooling.
-# Module-level init runs once per Azure Functions cold start.
-trading_client = TradingClient(ALPACA_API_KEY, ALPACA_SECRET_KEY, paper=ALPACA_PAPER)
+_alpaca_trading_client = None
+_alpaca_client_signature = None
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
@@ -131,6 +127,23 @@ def get_stock_broker() -> str:
 def get_options_broker() -> str:
     """Return the per-request options broker, with ORDER_BROKER as a legacy fallback."""
     return _get_broker_setting("OPTIONS_BROKER", "tastytrade")
+
+
+def get_alpaca_trading_client() -> TradingClient:
+    """Create the Alpaca trading client only when an Alpaca path needs it."""
+    global _alpaca_trading_client, _alpaca_client_signature
+
+    api_key = os.environ.get("ALPACA_API_KEY", "")
+    secret_key = os.environ.get("ALPACA_SECRET_KEY", "")
+    paper = os.environ.get("ALPACA_PAPER", "true").lower() == "true"
+    if not api_key or not secret_key:
+        raise ValueError("ALPACA_API_KEY and ALPACA_SECRET_KEY must be set for Alpaca routing")
+
+    signature = (api_key, secret_key, paper)
+    if _alpaca_trading_client is None or _alpaca_client_signature != signature:
+        _alpaca_trading_client = TradingClient(api_key, secret_key, paper=paper)
+        _alpaca_client_signature = signature
+    return _alpaca_trading_client
 
 
 def _get_broker_setting(primary_key: str, default: str) -> str:
@@ -363,7 +376,7 @@ def check_options_exits_timer(timer: func.TimerRequest) -> None:
     correlation_id = generate_correlation_id()
     log_structured(logger, logging.INFO, "Options exit monitor tick", correlation_id)
     try:
-        actions = check_options_exits(trading_client)
+        actions = check_options_exits(get_alpaca_trading_client())
         if actions:
             log_structured(
                 logger, logging.INFO,
@@ -386,7 +399,8 @@ def check_stock_orders_timer(timer: func.TimerRequest) -> None:
     correlation_id = generate_correlation_id()
     log_structured(logger, logging.INFO, "Stock order monitor tick", correlation_id)
     try:
-        events = check_stock_orders(trading_client, correlation_id)
+        client = get_alpaca_trading_client()
+        events = check_stock_orders(client, correlation_id)
         if events:
             log_structured(
                 logger, logging.INFO,
@@ -396,7 +410,7 @@ def check_stock_orders_timer(timer: func.TimerRequest) -> None:
 
         # Cancel unfilled orders older than configured minutes (default 120)
         stale_minutes = int(os.environ.get("STALE_ORDER_MINUTES", "120"))
-        cancelled = cancel_stale_orders(trading_client, stale_minutes, correlation_id)
+        cancelled = cancel_stale_orders(client, stale_minutes, correlation_id)
         if cancelled:
             log_structured(
                 logger, logging.INFO,
@@ -469,10 +483,11 @@ def _handle_stock_order(signal, strategy_config, correlation_id: str) -> func.Ht
 
 def _handle_alpaca_stock_order(signal, strategy_config, correlation_id: str) -> func.HttpResponse:
     """Process an Alpaca stock bracket order with full production safety checks."""
+    client = get_alpaca_trading_client()
 
     # -- Pre-flight: position limit check --
     try:
-        validate_position_limit(trading_client, correlation_id)
+        validate_position_limit(client, correlation_id)
     except MaxPositionsExceededError as e:
         log_structured(logger, logging.WARNING, str(e), correlation_id)
         return _json_response({"error": str(e), "correlation_id": correlation_id}, 429)
@@ -486,7 +501,7 @@ def _handle_alpaca_stock_order(signal, strategy_config, correlation_id: str) -> 
 
     # Equity-based sizing: fetch account equity for risk_pct mode
     try:
-        equity = get_account_equity(trading_client)
+        equity = get_account_equity(client)
     except Exception as e:
         log_structured(logger, logging.ERROR, f"Failed to fetch equity: {e}", correlation_id)
         equity = None
@@ -500,7 +515,7 @@ def _handle_alpaca_stock_order(signal, strategy_config, correlation_id: str) -> 
     # -- Pre-flight: buying power check --
     required_dollars = qty * signal.price
     try:
-        validate_buying_power(trading_client, required_dollars, correlation_id)
+        validate_buying_power(client, required_dollars, correlation_id)
     except InsufficientBuyingPowerError as e:
         return _json_response({"error": str(e), "correlation_id": correlation_id}, 422)
 
@@ -516,7 +531,7 @@ def _handle_alpaca_stock_order(signal, strategy_config, correlation_id: str) -> 
 
     # Submit with retry on transient failures
     order_id = submit_with_retry(
-        lambda: submit_stock_order(trading_client, params, correlation_id),
+        lambda: submit_stock_order(client, params, correlation_id),
         correlation_id,
     )
 
@@ -614,10 +629,11 @@ def _handle_tastytrade_stock_order(signal, strategy_config, correlation_id: str)
 
 def _handle_options_order(signal, strategy_config, correlation_id: str) -> func.HttpResponse:
     """Process an options order with contract screening and risk sizing."""
+    client = get_alpaca_trading_client()
 
     # -- Pre-flight: position limit check --
     try:
-        validate_position_limit(trading_client, correlation_id)
+        validate_position_limit(client, correlation_id)
     except MaxPositionsExceededError as e:
         log_structured(logger, logging.WARNING, str(e), correlation_id)
         return _json_response({"error": str(e), "correlation_id": correlation_id}, 429)
@@ -625,7 +641,7 @@ def _handle_options_order(signal, strategy_config, correlation_id: str) -> func.
     # 1. Screen for the best options contract
     try:
         contract = screen_option_contracts(
-            client=trading_client,
+            client=client,
             underlying=signal.ticker,
             side=signal.side,
             entry_price=signal.price,
@@ -659,7 +675,7 @@ def _handle_options_order(signal, strategy_config, correlation_id: str) -> func.
     # -- Pre-flight: buying power check --
     required_dollars = qty * contract.premium * 100.0
     try:
-        validate_buying_power(trading_client, required_dollars, correlation_id)
+        validate_buying_power(client, required_dollars, correlation_id)
     except InsufficientBuyingPowerError as e:
         return _json_response({"error": str(e), "correlation_id": correlation_id}, 422)
 
@@ -675,7 +691,7 @@ def _handle_options_order(signal, strategy_config, correlation_id: str) -> func.
     )
 
     order_id = submit_with_retry(
-        lambda: submit_options_entry_order(trading_client, params, correlation_id),
+        lambda: submit_options_entry_order(client, params, correlation_id),
         correlation_id,
     )
 
@@ -769,7 +785,7 @@ def _check_request_safety(correlation_id: str, mode: str = "stock") -> bool:
     broker = get_options_broker() if mode == "options" else get_stock_broker()
     if broker == "tastytrade":
         return check_tastytrade_trading_safety(correlation_id)
-    return check_trading_safety(trading_client, correlation_id)
+    return check_trading_safety(get_alpaca_trading_client(), correlation_id)
 
 
 def check_tastytrade_trading_safety(correlation_id: str) -> bool:

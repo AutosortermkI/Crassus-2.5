@@ -209,6 +209,24 @@ def test_resolve_broker_sync_targets_uses_dev_apps_for_dev_dashboard(tmp_path, m
     assert "prod" not in " ".join(targets.values())
 
 
+def test_resolve_broker_sync_targets_allows_dashboard_resource_group_override(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "ENVIRONMENT_NAME=dev\n"
+        "AZURE_RESOURCE_GROUP=CRG\n"
+        "AZURE_DEV_DASHBOARD_RESOURCE_GROUP=CRG-staging\n"
+        "AZURE_DEV_STOCK_FUNCTION_APP_NAME=dev-stock\n"
+        "AZURE_DEV_OPTIONS_FUNCTION_APP_NAME=dev-options\n"
+        "AZURE_DEV_DASHBOARD_APP_NAME=dev-dashboard\n"
+    )
+
+    monkeypatch.setattr(config_manager, "ENV_PATH", env_path)
+    targets = config_manager.resolve_broker_sync_targets()
+
+    assert targets["resource_group"] == "CRG"
+    assert targets["dashboard_resource_group"] == "CRG-staging"
+
+
 def test_resolve_broker_sync_targets_uses_prod_apps_for_prod_dashboard(tmp_path, monkeypatch):
     env_path = tmp_path / ".env"
     env_path.write_text(

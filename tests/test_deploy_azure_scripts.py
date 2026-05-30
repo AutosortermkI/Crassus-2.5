@@ -56,8 +56,18 @@ def test_unix_deploy_resolves_split_app_names_and_routes():
     assert "AZURE_PROD_DASHBOARD_APP_NAME" in script
     assert "ENABLE_STOCK_TRADING=true" in script
     assert "ENABLE_OPTIONS_TRADING=true" in script
+    assert "AzureWebJobsFeatureFlags=EnableWorkerIndexing" in script
     assert "/api/trade-stock?token=" in script
     assert "/api/trade-options?token=" in script
+
+
+def test_unix_deploy_supports_existing_dashboard_plan_and_quota_preflight():
+    script = (ROOT_DIR / "deploy_azure.sh").read_text()
+
+    assert "AZURE_DEV_DASHBOARD_RESOURCE_GROUP" in script
+    assert "AZURE_DASHBOARD_PLAN_RESOURCE_GROUP" in script
+    assert "dashboard_plan_id" in script
+    assert "Dashboard Web App is in QuotaExceeded state" in script
 
 
 def test_windows_deploy_fails_clearly_for_split_profile_flags_until_parity_exists():

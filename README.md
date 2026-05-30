@@ -600,12 +600,20 @@ AZURE_SUBSCRIPTION_ID=""
 AZURE_DEV_STOCK_FUNCTION_APP_NAME="crassus-dev-stock"
 AZURE_DEV_OPTIONS_FUNCTION_APP_NAME="crassus-dev-options"
 AZURE_DEV_DASHBOARD_APP_NAME="crassus-dev-dashboard"
+AZURE_DEV_DASHBOARD_RESOURCE_GROUP=""
+AZURE_DEV_DASHBOARD_PLAN_RESOURCE_GROUP=""
+AZURE_DEV_DASHBOARD_PLAN_NAME=""
 AZURE_PROD_STOCK_FUNCTION_APP_NAME="crassus-prod-stock"
 AZURE_PROD_OPTIONS_FUNCTION_APP_NAME="crassus-prod-options"
 AZURE_PROD_DASHBOARD_APP_NAME="crassus-prod-dashboard"
+AZURE_PROD_DASHBOARD_RESOURCE_GROUP=""
+AZURE_PROD_DASHBOARD_PLAN_RESOURCE_GROUP=""
+AZURE_PROD_DASHBOARD_PLAN_NAME=""
 AZURE_DASHBOARD_PLAN_NAME=""
 AZURE_DASHBOARD_SKU="F1"
 ```
+
+If the subscription cannot create a new Linux App Service plan, point the dashboard at an existing non-exhausted plan with the dashboard resource-group and plan variables above. The Function Apps still deploy to `AZURE_RESOURCE_GROUP`.
 
 ---
 
@@ -655,7 +663,9 @@ The Azure deployment itself does not require Tastytrade credentials in local `.e
 | `STALE_ORDER_MINUTES` | `120` | Cancel lingering unfilled stock entry orders after this many minutes |
 | `AZURE_SUBSCRIPTION_ID` | Active `az login` subscription | Required for the hosted dashboard to sync Azure app settings via managed identity / SDK |
 | `AZURE_DASHBOARD_APP_NAME` | Derived from function app name | Shared Azure Web App that serves the dashboard |
+| `AZURE_DASHBOARD_RESOURCE_GROUP` | `AZURE_RESOURCE_GROUP` | Optional resource group override for the hosted dashboard app |
 | `AZURE_DASHBOARD_PLAN_NAME` | Derived from dashboard app name | App Service plan for the hosted dashboard |
+| `AZURE_DASHBOARD_PLAN_RESOURCE_GROUP` | Dashboard resource group | Optional resource group override for an existing dashboard App Service plan |
 | `AZURE_DASHBOARD_SKU` | `F1` | App Service SKU for the hosted dashboard (F1=Free, B1=Basic) |
 | `AZURE_USE_KEY_VAULT` | `true` | Store hosted secrets in Azure Key Vault and sync app settings as Key Vault references |
 | `AZURE_KEY_VAULT_NAME` | Derived from storage account | Azure Key Vault used for hosted secrets |

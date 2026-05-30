@@ -47,17 +47,25 @@ AZURE_DEFAULTS = {
     "AZURE_DEV_STOCK_FUNCTION_APP_NAME": "crassus-dev-stock",
     "AZURE_DEV_OPTIONS_FUNCTION_APP_NAME": "crassus-dev-options",
     "AZURE_DEV_DASHBOARD_APP_NAME": "crassus-dev-dashboard",
+    "AZURE_DEV_DASHBOARD_RESOURCE_GROUP": "",
+    "AZURE_DEV_DASHBOARD_PLAN_RESOURCE_GROUP": "",
+    "AZURE_DEV_DASHBOARD_PLAN_NAME": "",
     "AZURE_DEV_STOCK_FUNCTION_BASE_URL": "",
     "AZURE_DEV_OPTIONS_FUNCTION_BASE_URL": "",
     "AZURE_DEV_DASHBOARD_BASE_URL": "",
     "AZURE_PROD_STOCK_FUNCTION_APP_NAME": "crassus-prod-stock",
     "AZURE_PROD_OPTIONS_FUNCTION_APP_NAME": "crassus-prod-options",
     "AZURE_PROD_DASHBOARD_APP_NAME": "crassus-prod-dashboard",
+    "AZURE_PROD_DASHBOARD_RESOURCE_GROUP": "",
+    "AZURE_PROD_DASHBOARD_PLAN_RESOURCE_GROUP": "",
+    "AZURE_PROD_DASHBOARD_PLAN_NAME": "",
     "AZURE_PROD_STOCK_FUNCTION_BASE_URL": "",
     "AZURE_PROD_OPTIONS_FUNCTION_BASE_URL": "",
     "AZURE_PROD_DASHBOARD_BASE_URL": "",
     "AZURE_DASHBOARD_APP_NAME": "",
+    "AZURE_DASHBOARD_RESOURCE_GROUP": "",
     "AZURE_DASHBOARD_PLAN_NAME": "",
+    "AZURE_DASHBOARD_PLAN_RESOURCE_GROUP": "",
     "AZURE_DASHBOARD_SKU": "F1",
     "AZURE_USE_KEY_VAULT": "true",
     "AZURE_KEY_VAULT_NAME": "",
@@ -275,12 +283,26 @@ PARAM_DEFINITIONS = OrderedDict([
         "default": AZURE_DEFAULTS["AZURE_DASHBOARD_APP_NAME"],
         "description": "Optional Azure Web App name for a hosted dashboard",
     }),
+    ("AZURE_DASHBOARD_RESOURCE_GROUP", {
+        "label": "Dashboard Resource Group",
+        "group": "Azure Deployment",
+        "type": "text",
+        "default": "",
+        "description": "Optional resource group override for the hosted dashboard",
+    }),
     ("AZURE_DASHBOARD_PLAN_NAME", {
         "label": "Dashboard Plan Name",
         "group": "Azure Deployment",
         "type": "text",
         "default": AZURE_DEFAULTS["AZURE_DASHBOARD_PLAN_NAME"],
         "description": "Optional App Service plan name for the hosted dashboard",
+    }),
+    ("AZURE_DASHBOARD_PLAN_RESOURCE_GROUP", {
+        "label": "Dashboard Plan Resource Group",
+        "group": "Azure Deployment",
+        "type": "text",
+        "default": "",
+        "description": "Optional resource group override for an existing dashboard App Service plan",
     }),
     ("AZURE_DASHBOARD_SKU", {
         "label": "Dashboard SKU",
@@ -830,10 +852,21 @@ def _build_azure_settings(env: dict) -> dict:
         "resource_group": (
             env.get("AZURE_RESOURCE_GROUP") or AZURE_DEFAULTS["AZURE_RESOURCE_GROUP"]
         ).strip(),
+        "dashboard_resource_group": (
+            env.get("AZURE_DASHBOARD_RESOURCE_GROUP")
+            or env.get("AZURE_RESOURCE_GROUP")
+            or AZURE_DEFAULTS["AZURE_RESOURCE_GROUP"]
+        ).strip(),
         "location": (env.get("AZURE_LOCATION") or AZURE_DEFAULTS["AZURE_LOCATION"]).strip(),
         "storage_account": storage_account,
         "dashboard_app_name": (env.get("AZURE_DASHBOARD_APP_NAME") or "").strip(),
         "dashboard_plan_name": (env.get("AZURE_DASHBOARD_PLAN_NAME") or "").strip(),
+        "dashboard_plan_resource_group": (
+            env.get("AZURE_DASHBOARD_PLAN_RESOURCE_GROUP")
+            or env.get("AZURE_DASHBOARD_RESOURCE_GROUP")
+            or env.get("AZURE_RESOURCE_GROUP")
+            or AZURE_DEFAULTS["AZURE_RESOURCE_GROUP"]
+        ).strip(),
         "dashboard_sku": (
             env.get("AZURE_DASHBOARD_SKU") or AZURE_DEFAULTS["AZURE_DASHBOARD_SKU"]
         ).strip(),
@@ -883,9 +916,17 @@ def resolve_broker_sync_targets(env: Optional[dict] = None) -> dict:
     if not dashboard:
         dashboard = _env_value(values, "AZURE_DASHBOARD_APP_NAME")
 
+    resource_group = _env_value(values, "AZURE_RESOURCE_GROUP")
+    dashboard_resource_group = (
+        _env_value(values, f"{prefix}_DASHBOARD_RESOURCE_GROUP")
+        or _env_value(values, "AZURE_DASHBOARD_RESOURCE_GROUP")
+        or resource_group
+    )
+
     return {
         "environment": current_env,
-        "resource_group": _env_value(values, "AZURE_RESOURCE_GROUP"),
+        "resource_group": resource_group,
+        "dashboard_resource_group": dashboard_resource_group,
         "stock_function": stock_function,
         "options_function": options_function,
         "dashboard": dashboard,
@@ -949,7 +990,12 @@ def sync_broker_settings_to_azure(updates: dict) -> dict:
     return {
         "stock_function": _sync_one_app_setting("function", targets["stock_function"], resource_group, allowed_updates),
         "options_function": _sync_one_app_setting("function", targets["options_function"], resource_group, allowed_updates),
-        "dashboard": _sync_one_app_setting("webapp", targets["dashboard"], resource_group, allowed_updates),
+        "dashboard": _sync_one_app_setting(
+            "webapp",
+            targets["dashboard"],
+            targets["dashboard_resource_group"],
+            allowed_updates,
+        ),
     }
 
 
@@ -1135,7 +1181,7 @@ def _sync_settings_with_management_api(settings: dict, updates: dict) -> dict:
         if settings["dashboard_app_name"]:
             dashboard_result = _sync_app_settings_with_management_api(
                 client,
-                settings["resource_group"],
+                settings["dashboard_resource_group"],
                 settings["dashboard_app_name"],
                 updates,
             )
@@ -1245,7 +1291,7 @@ def _sync_settings_with_cli(settings: dict, updates: dict) -> dict:
         dashboard_cmd = [
             "az", "webapp", "config", "appsettings", "set",
             "--name", settings["dashboard_app_name"],
-            "--resource-group", settings["resource_group"],
+            "--resource-group", settings["dashboard_resource_group"],
             "--settings",
         ] + settings_args + ["--output", "none"]
         dashboard_result = _run_azure_settings_command(

@@ -33,6 +33,23 @@ def _make_request(content: str, token: str = "token", route: str = "trade") -> f
     )
 
 
+def test_function_app_imports_without_alpaca_credentials(monkeypatch):
+    monkeypatch.delenv("ALPACA_API_KEY", raising=False)
+    monkeypatch.delenv("ALPACA_SECRET_KEY", raising=False)
+    monkeypatch.delenv("ALPACA_PAPER", raising=False)
+    monkeypatch.setenv("WEBHOOK_AUTH_TOKEN", "token")
+    monkeypatch.setenv("STOCK_WEBHOOK_AUTH_TOKEN", "stock-token")
+    monkeypatch.setenv("OPTIONS_WEBHOOK_AUTH_TOKEN", "options-token")
+
+    module = importlib.import_module("function_app")
+    reloaded = importlib.reload(module)
+
+    assert reloaded.trade_stock
+    assert reloaded.trade_options
+    assert reloaded.get_stock_broker() == "alpaca"
+    assert reloaded.get_options_broker() == "tastytrade"
+
+
 def test_trade_unknown_strategy_returns_400_and_records_activity(monkeypatch):
     function_module = _reload_function_module(monkeypatch)
     recorded_events = []
