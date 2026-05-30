@@ -169,3 +169,64 @@ def test_prepare_azure_app_settings_hashes_plain_dashboard_password():
     assert app_updates["DASHBOARD_ACCESS_PASSWORD"] == ""
     assert "DASHBOARD_ACCESS_PASSWORD_HASH" in app_updates
     assert check_password_hash(app_updates["DASHBOARD_ACCESS_PASSWORD_HASH"], "letmein")
+
+
+def test_get_config_exposes_split_broker_routing_defaults(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text("")
+
+    monkeypatch.setattr(config_manager, "ENV_PATH", env_path)
+    monkeypatch.delenv("WEBSITE_SITE_NAME", raising=False)
+
+    config = config_manager.get_config()
+
+    assert config["ENVIRONMENT_NAME"]["value"] == "dev"
+    assert config["STOCK_BROKER"]["value"] == "alpaca"
+    assert config["OPTIONS_BROKER"]["value"] == "tastytrade"
+    assert config["ENABLE_TASTYTRADE_OPTIONS"]["value"] == "false"
+
+
+def test_resolve_broker_sync_targets_uses_dev_apps_for_dev_dashboard(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "ENVIRONMENT_NAME=dev\n"
+        "AZURE_RESOURCE_GROUP=CRG\n"
+        "AZURE_DEV_STOCK_FUNCTION_APP_NAME=dev-stock\n"
+        "AZURE_DEV_OPTIONS_FUNCTION_APP_NAME=dev-options\n"
+        "AZURE_DEV_DASHBOARD_APP_NAME=dev-dashboard\n"
+        "AZURE_PROD_STOCK_FUNCTION_APP_NAME=prod-stock\n"
+        "AZURE_PROD_OPTIONS_FUNCTION_APP_NAME=prod-options\n"
+        "AZURE_PROD_DASHBOARD_APP_NAME=prod-dashboard\n"
+    )
+
+    monkeypatch.setattr(config_manager, "ENV_PATH", env_path)
+    targets = config_manager.resolve_broker_sync_targets()
+
+    assert targets["environment"] == "dev"
+    assert targets["stock_function"] == "dev-stock"
+    assert targets["options_function"] == "dev-options"
+    assert targets["dashboard"] == "dev-dashboard"
+    assert "prod" not in " ".join(targets.values())
+
+
+def test_resolve_broker_sync_targets_uses_prod_apps_for_prod_dashboard(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "ENVIRONMENT_NAME=prod\n"
+        "AZURE_RESOURCE_GROUP=CRG\n"
+        "AZURE_DEV_STOCK_FUNCTION_APP_NAME=dev-stock\n"
+        "AZURE_DEV_OPTIONS_FUNCTION_APP_NAME=dev-options\n"
+        "AZURE_DEV_DASHBOARD_APP_NAME=dev-dashboard\n"
+        "AZURE_PROD_STOCK_FUNCTION_APP_NAME=prod-stock\n"
+        "AZURE_PROD_OPTIONS_FUNCTION_APP_NAME=prod-options\n"
+        "AZURE_PROD_DASHBOARD_APP_NAME=prod-dashboard\n"
+    )
+
+    monkeypatch.setattr(config_manager, "ENV_PATH", env_path)
+    targets = config_manager.resolve_broker_sync_targets()
+
+    assert targets["environment"] == "prod"
+    assert targets["stock_function"] == "prod-stock"
+    assert targets["options_function"] == "prod-options"
+    assert targets["dashboard"] == "prod-dashboard"
+    assert "dev" not in " ".join(targets.values())

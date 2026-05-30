@@ -63,7 +63,6 @@ from tastytrade_orders import (
     TastytradeAPIError,
     TastytradeBracketParams,
     TastytradeConfigurationError,
-    get_order_broker,
     get_tastytrade_account_equity,
     get_tastytrade_client,
     submit_tastytrade_stock_order,
@@ -93,6 +92,7 @@ ALPACA_API_KEY    = os.environ.get("ALPACA_API_KEY", "")
 ALPACA_SECRET_KEY = os.environ.get("ALPACA_SECRET_KEY", "")
 ALPACA_PAPER      = os.environ.get("ALPACA_PAPER", "true").lower() == "true"
 WEBHOOK_AUTH_TOKEN = os.environ.get("WEBHOOK_AUTH_TOKEN", "")
+ALLOWED_BROKERS = {"alpaca", "tastytrade"}
 
 # Alpaca client -- reused across requests for connection pooling.
 # Module-level init runs once per Azure Functions cold start.
@@ -105,45 +105,137 @@ app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 # HTTP Trigger
 # ======================================================================
 
+@app.route(route="trade-stock", methods=["POST"])
+def trade_stock(req: func.HttpRequest) -> func.HttpResponse:
+    """Stock/share webhook handler."""
+    return _handle_trade_request(req, expected_mode="stock")
+
+
+@app.route(route="trade-options", methods=["POST"])
+def trade_options(req: func.HttpRequest) -> func.HttpResponse:
+    """Options webhook handler."""
+    return _handle_trade_request(req, expected_mode="options")
+
+
 @app.route(route="trade", methods=["POST"])
 def trade(req: func.HttpRequest) -> func.HttpResponse:
-    """Main webhook handler: authenticate -> parse -> route -> order."""
+    """Legacy webhook handler that routes by parsed signal mode."""
+    return _handle_trade_request(req, expected_mode=None, legacy=True)
 
-    correlation_id = generate_correlation_id()
-    log_structured(logger, logging.INFO, "Received trade request", correlation_id)
 
-    # ----------------------------------------------------------------
-    # 1. Authentication: validate token (header or query parameter)
-    # ----------------------------------------------------------------
+def get_stock_broker() -> str:
+    """Return the per-request stock broker, with ORDER_BROKER as a legacy fallback."""
+    return _get_broker_setting("STOCK_BROKER", "alpaca")
+
+
+def get_options_broker() -> str:
+    """Return the per-request options broker, with ORDER_BROKER as a legacy fallback."""
+    return _get_broker_setting("OPTIONS_BROKER", "tastytrade")
+
+
+def _get_broker_setting(primary_key: str, default: str) -> str:
+    broker = os.environ.get(primary_key, "").strip().lower()
+    if not broker:
+        broker = os.environ.get("ORDER_BROKER", "").strip().lower()
+    if not broker:
+        broker = default
+    if broker not in ALLOWED_BROKERS:
+        raise ValueError(f"{primary_key} must be 'alpaca' or 'tastytrade'")
+    return broker
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name, "")
+    if raw == "":
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _authenticate_request(req: func.HttpRequest, correlation_id: str, expected_mode: Optional[str]) -> Optional[func.HttpResponse]:
     token = req.headers.get("X-Webhook-Token", "") or req.params.get("token", "")
-    if not token or not hmac.compare_digest(token, WEBHOOK_AUTH_TOKEN):
+    token_key = {
+        "stock": "STOCK_WEBHOOK_AUTH_TOKEN",
+        "options": "OPTIONS_WEBHOOK_AUTH_TOKEN",
+    }.get(expected_mode, "WEBHOOK_AUTH_TOKEN")
+    expected_token = os.environ.get(token_key, "").strip() or os.environ.get("WEBHOOK_AUTH_TOKEN", "").strip()
+    if not token or not expected_token or not hmac.compare_digest(token, expected_token):
         log_structured(logger, logging.WARNING, "Unauthorized request", correlation_id)
         return _json_response({"error": "Unauthorized", "correlation_id": correlation_id}, 401)
+    return None
 
-    # ----------------------------------------------------------------
-    # 2. Parse webhook body
-    # ----------------------------------------------------------------
+
+def _parse_signal(req: func.HttpRequest, correlation_id: str) -> tuple[Optional[dict], Optional[object], Optional[func.HttpResponse]]:
     try:
         data = req.get_json()
     except ValueError:
         log_structured(logger, logging.WARNING, "Invalid JSON body", correlation_id)
-        return _json_response({"error": "Invalid JSON", "correlation_id": correlation_id}, 400)
-
-    signal = None
+        return None, None, _json_response({"error": "Invalid JSON", "correlation_id": correlation_id}, 400)
 
     try:
         signal = parse_webhook_payload(data)
     except ParseError as e:
         log_structured(logger, logging.WARNING, f"Parse error: {e}", correlation_id)
-        response = _json_response({"error": str(e), "correlation_id": correlation_id}, 400)
-        _record_activity(data, correlation_id, response, signal=None, parse_error=str(e))
-        return response
+        return data, None, _json_response({"error": str(e), "correlation_id": correlation_id}, 400)
+    return data, signal, None
 
-    # ----------------------------------------------------------------
-    # 2a. Trading safety gates
-    # ----------------------------------------------------------------
+
+def _mode_error(signal, expected_mode: Optional[str], correlation_id: str) -> Optional[func.HttpResponse]:
+    if expected_mode == "stock" and signal.mode == "options":
+        return _json_response(
+            {"error": "Options signals must use /api/trade-options", "correlation_id": correlation_id},
+            400,
+        )
+    if expected_mode == "options" and signal.mode != "options":
+        return _json_response(
+            {"error": "Stock signals must use /api/trade-stock; options route requires Mode: options", "correlation_id": correlation_id},
+            400,
+        )
+    return None
+
+
+def _run_common_preflight(signal, correlation_id: str) -> None:
+    _check_request_safety(correlation_id, signal.mode)
+
+
+def _get_strategy_config(signal, correlation_id: str):
     try:
-        _check_request_safety(correlation_id)
+        return get_strategy(signal.strategy), None
+    except UnknownStrategyError as e:
+        log_structured(logger, logging.WARNING, f"Unknown strategy: {e}", correlation_id)
+        return None, _json_response({"error": str(e), "correlation_id": correlation_id}, 400)
+
+
+def _handle_trade_request(
+    req: func.HttpRequest,
+    expected_mode: Optional[str],
+    legacy: bool = False,
+) -> func.HttpResponse:
+    route_name = "trade" if legacy else f"trade-{expected_mode}"
+    correlation_id = generate_correlation_id()
+    log_structured(logger, logging.INFO, f"Received {route_name} request", correlation_id)
+
+    auth_response = _authenticate_request(req, correlation_id, expected_mode)
+    if auth_response is not None:
+        return auth_response
+
+    data, signal, parse_response = _parse_signal(req, correlation_id)
+    if parse_response is not None:
+        _record_activity(data or {}, correlation_id, parse_response, signal=None, parse_error=json.loads(parse_response.get_body()).get("error"))
+        return parse_response
+
+    mode_response = _mode_error(signal, expected_mode, correlation_id)
+    if mode_response is not None:
+        _record_activity(data, correlation_id, mode_response, signal=signal, parse_error=json.loads(mode_response.get_body()).get("error"))
+        return mode_response
+
+    log_structured(
+        logger, logging.INFO, "Signal parsed", correlation_id,
+        ticker=signal.ticker, side=signal.side,
+        strategy=signal.strategy, price=signal.price, mode=signal.mode,
+    )
+
+    try:
+        _run_common_preflight(signal, correlation_id)
     except LiveTradingNotConfirmedError as e:
         response = _json_response({"error": str(e), "correlation_id": correlation_id}, 403)
         _record_activity(data, correlation_id, response, signal=signal, parse_error=str(e))
@@ -156,34 +248,18 @@ def trade(req: func.HttpRequest) -> func.HttpResponse:
         response = _json_response({"error": str(e), "correlation_id": correlation_id}, 403)
         _record_activity(data, correlation_id, response, signal=signal, parse_error=str(e))
         return response
-    except TastytradeConfigurationError as e:
-        response = _json_response(
-            {"error": str(e), "broker": "tastytrade", "correlation_id": correlation_id},
-            503,
-        )
+    except (TastytradeConfigurationError, ValueError) as e:
+        response = _json_response({"error": str(e), "correlation_id": correlation_id}, 503)
         _record_activity(data, correlation_id, response, signal=signal, parse_error=str(e))
         return response
     except TastytradeAPIError as e:
         response = _json_response(
-            {
-                "error": f"Tastytrade API error: {str(e)}",
-                "broker": "tastytrade",
-                "correlation_id": correlation_id,
-            },
+            {"error": f"Tastytrade API error: {str(e)}", "broker": "tastytrade", "correlation_id": correlation_id},
             502,
         )
         _record_activity(data, correlation_id, response, signal=signal, parse_error=str(e))
         return response
 
-    log_structured(
-        logger, logging.INFO, "Signal parsed", correlation_id,
-        ticker=signal.ticker, side=signal.side,
-        strategy=signal.strategy, price=signal.price, mode=signal.mode,
-    )
-
-    # ----------------------------------------------------------------
-    # 2b. Signal deduplication
-    # ----------------------------------------------------------------
     if is_duplicate_signal(
         ticker=signal.ticker,
         side=signal.side,
@@ -192,102 +268,61 @@ def trade(req: func.HttpRequest) -> func.HttpResponse:
         price=signal.price,
         correlation_id=correlation_id,
     ):
-        log_structured(
-            logger, logging.WARNING, "Duplicate signal rejected", correlation_id,
-            ticker=signal.ticker, side=signal.side, strategy=signal.strategy,
-        )
-        return _json_response({
+        response = _json_response({
             "error": "Duplicate signal",
             "detail": "This signal was already processed recently",
             "correlation_id": correlation_id,
         }, 409)
-
-    # ----------------------------------------------------------------
-    # 3. Strategy lookup
-    # ----------------------------------------------------------------
-    try:
-        strategy_config = get_strategy(signal.strategy)
-    except UnknownStrategyError as e:
-        log_structured(logger, logging.WARNING, f"Unknown strategy: {e}", correlation_id)
-        response = _json_response({"error": str(e), "correlation_id": correlation_id}, 400)
-        _record_activity(data, correlation_id, response, signal=signal, parse_error=str(e))
+        _record_activity(data, correlation_id, response, signal=signal, parse_error="Duplicate signal")
         return response
 
-    # ----------------------------------------------------------------
-    # 4. Route: stock or options
-    # ----------------------------------------------------------------
+    strategy_config, strategy_response = _get_strategy_config(signal, correlation_id)
+    if strategy_response is not None:
+        _record_activity(data, correlation_id, strategy_response, signal=signal, parse_error=json.loads(strategy_response.get_body()).get("error"))
+        return strategy_response
+
     try:
         if signal.mode == "stock":
-            response = _handle_stock_order(signal, strategy_config, correlation_id)
-        elif signal.mode == "options" and get_order_broker() == "tastytrade":
-            response = _json_response(
-                {
-                    "error": (
-                        "Tastytrade options routing is not integrated yet. "
-                        "Stock alerts can use Tastytrade now; options are blocked "
-                        "to avoid sending unverified contract symbols."
-                    ),
-                    "broker": "tastytrade",
-                    "mode": "options",
-                    "correlation_id": correlation_id,
-                },
-                501,
-            )
+            body, status_code = _route_stock_order(signal, strategy_config, correlation_id)
         elif signal.mode == "options":
-            response = _handle_options_order(signal, strategy_config, correlation_id)
+            body, status_code = _route_options_order(signal, strategy_config, correlation_id)
         else:
-            response = _json_response(
-                {"error": f"Unsupported mode: {signal.mode}", "correlation_id": correlation_id},
-                400,
-            )
+            body, status_code = {"error": f"Unsupported mode: {signal.mode}"}, 400
+
+        if signal.mode == "stock":
+            body.setdefault("route", "trade-stock")
+            body.setdefault("broker", get_stock_broker())
+            body.setdefault("symbol", signal.ticker)
+        elif signal.mode == "options":
+            body.setdefault("route", "trade-options")
+            body.setdefault("broker", get_options_broker())
+            body.setdefault("underlying", signal.ticker)
+        body.setdefault("side", signal.side)
+        body.setdefault("strategy", signal.strategy)
+        body.setdefault("correlation_id", correlation_id)
+        if legacy:
+            body["legacy_warning"] = "The /api/trade route is deprecated; move to /api/trade-stock or /api/trade-options."
+        response = _json_response(body, status_code)
         _record_activity(data, correlation_id, response, signal=signal)
         return response
 
     except APIError as e:
-        log_structured(
-            logger, logging.ERROR, f"Alpaca API error: {e}", correlation_id,
-            symbol=signal.ticker, mode=signal.mode,
-        )
-        response = _json_response(
-            {"error": f"Alpaca API error: {str(e)}", "correlation_id": correlation_id},
-            502,
-        )
+        response = _json_response({"error": f"Alpaca API error: {str(e)}", "correlation_id": correlation_id}, 502)
         _record_activity(data, correlation_id, response, signal=signal, parse_error=str(e))
         return response
-
     except TastytradeConfigurationError as e:
-        log_structured(
-            logger, logging.ERROR, f"Tastytrade configuration error: {e}", correlation_id,
-            symbol=signal.ticker, mode=signal.mode,
-        )
-        response = _json_response(
-            {"error": str(e), "broker": "tastytrade", "correlation_id": correlation_id},
-            503,
-        )
+        response = _json_response({"error": str(e), "broker": "tastytrade", "correlation_id": correlation_id}, 503)
         _record_activity(data, correlation_id, response, signal=signal, parse_error=str(e))
         return response
-
     except TastytradeAPIError as e:
-        log_structured(
-            logger, logging.ERROR, f"Tastytrade API error: {e}", correlation_id,
-            symbol=signal.ticker, mode=signal.mode, status_code=e.status_code,
-        )
         response = _json_response(
             {"error": f"Tastytrade API error: {str(e)}", "broker": "tastytrade", "correlation_id": correlation_id},
             502,
         )
         _record_activity(data, correlation_id, response, signal=signal, parse_error=str(e))
         return response
-
     except Exception as e:
-        log_structured(
-            logger, logging.ERROR, f"Internal error: {e}", correlation_id,
-            symbol=signal.ticker, mode=signal.mode,
-        )
-        response = _json_response(
-            {"error": f"Internal error: {str(e)}", "correlation_id": correlation_id},
-            500,
-        )
+        response = _json_response({"error": f"Internal error: {str(e)}", "correlation_id": correlation_id}, 500)
         _record_activity(data, correlation_id, response, signal=signal, parse_error=str(e))
         return response
 
@@ -376,10 +411,64 @@ def check_stock_orders_timer(timer: func.TimerRequest) -> None:
 # Internal route handlers
 # ======================================================================
 
+def _response_body_status(response: func.HttpResponse) -> tuple[dict, int]:
+    try:
+        return json.loads(response.get_body()), response.status_code
+    except Exception:
+        return {"error": response.get_body().decode("utf-8", errors="replace")}, response.status_code
+
+
+def _route_stock_order(signal, strategy_config, correlation_id: str) -> tuple[dict, int]:
+    broker = get_stock_broker()
+    if broker == "tastytrade":
+        body, status_code = _response_body_status(
+            _handle_tastytrade_stock_order(signal, strategy_config, correlation_id)
+        )
+    else:
+        body, status_code = _response_body_status(
+            _handle_alpaca_stock_order(signal, strategy_config, correlation_id)
+        )
+    body.setdefault("broker", broker)
+    body.setdefault("route", "trade-stock")
+    return body, status_code
+
+
+def _route_options_order(signal, strategy_config, correlation_id: str) -> tuple[dict, int]:
+    broker = get_options_broker()
+    if broker == "tastytrade":
+        if not _env_bool("ENABLE_TASTYTRADE_OPTIONS", False):
+            return {
+                "error": "Tastytrade options routing is configured but disabled until contract-symbol routing is verified.",
+                "broker": "tastytrade",
+                "route": "trade-options",
+                "enabled": False,
+                "correlation_id": correlation_id,
+            }, 501
+        if not _env_bool("OPTIONS_ALLOW_FALLBACK_TO_ALPACA", False):
+            return {
+                "error": "TastyTrade options routing is not implemented until contract-symbol routing is verified.",
+                "broker": "tastytrade",
+                "route": "trade-options",
+                "enabled": True,
+                "correlation_id": correlation_id,
+            }, 501
+
+    body, status_code = _response_body_status(_handle_options_order(signal, strategy_config, correlation_id))
+    body.setdefault("broker", "alpaca")
+    body.setdefault("route", "trade-options")
+    if broker == "tastytrade":
+        body["fallback_broker"] = "alpaca"
+    return body, status_code
+
+
 def _handle_stock_order(signal, strategy_config, correlation_id: str) -> func.HttpResponse:
-    """Process a stock bracket order with full production safety checks."""
-    if get_order_broker() == "tastytrade":
-        return _handle_tastytrade_stock_order(signal, strategy_config, correlation_id)
+    """Compatibility wrapper for older callers."""
+    body, status_code = _route_stock_order(signal, strategy_config, correlation_id)
+    return _json_response(body, status_code)
+
+
+def _handle_alpaca_stock_order(signal, strategy_config, correlation_id: str) -> func.HttpResponse:
+    """Process an Alpaca stock bracket order with full production safety checks."""
 
     # -- Pre-flight: position limit check --
     try:
@@ -676,8 +765,9 @@ def _record_activity(
     return None
 
 
-def _check_request_safety(correlation_id: str) -> bool:
-    if get_order_broker() == "tastytrade":
+def _check_request_safety(correlation_id: str, mode: str = "stock") -> bool:
+    broker = get_options_broker() if mode == "options" else get_stock_broker()
+    if broker == "tastytrade":
         return check_tastytrade_trading_safety(correlation_id)
     return check_trading_safety(trading_client, correlation_id)
 
@@ -685,7 +775,7 @@ def _check_request_safety(correlation_id: str) -> bool:
 def check_tastytrade_trading_safety(correlation_id: str) -> bool:
     """Run safety gates that apply before Tastytrade order entry."""
     check_operator_halt(correlation_id)
-    check_live_trading_gate(correlation_id)
+    check_live_trading_gate(correlation_id, broker="tastytrade")
     _check_tastytrade_daily_loss_limit(correlation_id)
     return True
 

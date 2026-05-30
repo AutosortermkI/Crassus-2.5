@@ -12,16 +12,18 @@ def _reload_function_module(monkeypatch):
     monkeypatch.setenv("ALPACA_SECRET_KEY", "secret")
     monkeypatch.setenv("ALPACA_PAPER", "true")
     monkeypatch.setenv("WEBHOOK_AUTH_TOKEN", "token")
+    monkeypatch.setenv("STOCK_WEBHOOK_AUTH_TOKEN", "stock-token")
+    monkeypatch.setenv("OPTIONS_WEBHOOK_AUTH_TOKEN", "options-token")
     monkeypatch.setenv("AzureWebJobsStorage", "UseDevelopmentStorage=true")
 
     module = importlib.import_module("function_app")
     return importlib.reload(module)
 
 
-def _make_request(content: str, token: str = "token") -> func.HttpRequest:
+def _make_request(content: str, token: str = "token", route: str = "trade") -> func.HttpRequest:
     return func.HttpRequest(
         method="POST",
-        url="http://localhost/api/trade",
+        url=f"http://localhost/api/{route}",
         headers={
             "Content-Type": "application/json",
             "X-Webhook-Token": token,
@@ -79,6 +81,7 @@ def test_trade_halted_returns_503_and_records_activity(monkeypatch):
 
 
 def test_options_trade_insufficient_buying_power_returns_422(monkeypatch):
+    monkeypatch.setenv("OPTIONS_BROKER", "alpaca")
     function_module = _reload_function_module(monkeypatch)
 
     contract = SimpleNamespace(
@@ -124,6 +127,7 @@ def test_options_trade_insufficient_buying_power_returns_422(monkeypatch):
 
 
 def test_options_trade_uses_retry_wrapper(monkeypatch):
+    monkeypatch.setenv("OPTIONS_BROKER", "alpaca")
     function_module = _reload_function_module(monkeypatch)
 
     contract = SimpleNamespace(
@@ -242,3 +246,164 @@ def test_tastytrade_options_mode_returns_controlled_not_implemented(monkeypatch)
     assert resp.status_code == 501
     assert body["broker"] == "tastytrade"
     assert "Tastytrade options routing" in body["error"]
+
+
+def test_broker_helpers_use_split_vars_and_legacy_fallback(monkeypatch):
+    monkeypatch.delenv("STOCK_BROKER", raising=False)
+    monkeypatch.delenv("OPTIONS_BROKER", raising=False)
+    monkeypatch.setenv("ORDER_BROKER", "tastytrade")
+    function_module = _reload_function_module(monkeypatch)
+
+    assert function_module.get_stock_broker() == "tastytrade"
+    assert function_module.get_options_broker() == "tastytrade"
+
+    monkeypatch.setenv("STOCK_BROKER", "alpaca")
+    monkeypatch.setenv("OPTIONS_BROKER", "tastytrade")
+    assert function_module.get_stock_broker() == "alpaca"
+    assert function_module.get_options_broker() == "tastytrade"
+
+    monkeypatch.setenv("STOCK_BROKER", "not-a-broker")
+    try:
+        function_module.get_stock_broker()
+    except ValueError as exc:
+        assert "STOCK_BROKER" in str(exc)
+    else:
+        raise AssertionError("invalid stock broker should fail closed")
+
+
+def test_trade_stock_route_accepts_stock_signal_with_stock_token(monkeypatch):
+    function_module = _reload_function_module(monkeypatch)
+    monkeypatch.setattr(function_module, "is_duplicate_signal", lambda **kwargs: False)
+    monkeypatch.setattr(function_module, "_route_stock_order", MagicMock(return_value=(
+        {"status": "ok", "route": "trade-stock", "broker": "alpaca", "symbol": "AAPL", "side": "buy", "qty": 1},
+        200,
+    )))
+    monkeypatch.setattr(function_module, "_run_common_preflight", MagicMock())
+    monkeypatch.setattr(function_module, "record_webhook_event", lambda event: None)
+
+    req = _make_request(
+        "**New Buy Signal:**\n"
+        "AAPL 5 Min Candle\n"
+        "Strategy: bollinger_mean_reversion\n"
+        "Mode: stock\n"
+        "Price: 189.50",
+        token="stock-token",
+        route="trade-stock",
+    )
+
+    resp = function_module.trade_stock(req)
+    body = json.loads(resp.get_body())
+
+    assert resp.status_code == 200
+    assert body["route"] == "trade-stock"
+    assert body["broker"] == "alpaca"
+    function_module._route_stock_order.assert_called_once()
+
+
+def test_trade_stock_route_rejects_explicit_options_signal(monkeypatch):
+    function_module = _reload_function_module(monkeypatch)
+    monkeypatch.setattr(function_module, "record_webhook_event", lambda event: None)
+
+    req = _make_request(
+        "**New Buy Signal:**\n"
+        "AAPL 5 Min Candle\n"
+        "Strategy: bollinger_mean_reversion\n"
+        "Mode: options\n"
+        "Price: 189.50",
+        token="stock-token",
+        route="trade-stock",
+    )
+
+    resp = function_module.trade_stock(req)
+    body = json.loads(resp.get_body())
+
+    assert resp.status_code == 400
+    assert "options" in body["error"].lower()
+
+
+def test_trade_options_route_rejects_explicit_stock_signal(monkeypatch):
+    function_module = _reload_function_module(monkeypatch)
+    monkeypatch.setattr(function_module, "record_webhook_event", lambda event: None)
+
+    req = _make_request(
+        "**New Buy Signal:**\n"
+        "AAPL 5 Min Candle\n"
+        "Strategy: bollinger_mean_reversion\n"
+        "Mode: stock\n"
+        "Price: 189.50",
+        token="options-token",
+        route="trade-options",
+    )
+
+    resp = function_module.trade_options(req)
+    body = json.loads(resp.get_body())
+
+    assert resp.status_code == 400
+    assert "stock" in body["error"].lower()
+
+
+def test_trade_options_tastytrade_disabled_fails_safe(monkeypatch):
+    monkeypatch.setenv("OPTIONS_BROKER", "tastytrade")
+    monkeypatch.setenv("ENABLE_TASTYTRADE_OPTIONS", "false")
+    function_module = _reload_function_module(monkeypatch)
+    monkeypatch.setattr(function_module, "is_duplicate_signal", lambda **kwargs: False)
+    monkeypatch.setattr(function_module, "_run_common_preflight", MagicMock())
+    monkeypatch.setattr(function_module, "screen_option_contracts", MagicMock(side_effect=AssertionError("Alpaca options path used")))
+    monkeypatch.setattr(function_module, "record_webhook_event", lambda event: None)
+
+    req = _make_request(
+        "**New Buy Signal:**\n"
+        "AAPL 5 Min Candle\n"
+        "Strategy: bollinger_mean_reversion\n"
+        "Mode: options\n"
+        "Price: 189.50",
+        token="options-token",
+        route="trade-options",
+    )
+
+    resp = function_module.trade_options(req)
+    body = json.loads(resp.get_body())
+
+    assert resp.status_code == 501
+    assert body["route"] == "trade-options"
+    assert body["broker"] == "tastytrade"
+    assert body["enabled"] is False
+    assert "disabled until contract-symbol routing is verified" in body["error"]
+
+
+def test_legacy_trade_routes_by_signal_mode_and_warns(monkeypatch):
+    function_module = _reload_function_module(monkeypatch)
+    monkeypatch.setattr(function_module, "is_duplicate_signal", lambda **kwargs: False)
+    monkeypatch.setattr(function_module, "_run_common_preflight", MagicMock())
+    monkeypatch.setattr(function_module, "_route_stock_order", MagicMock(return_value=(
+        {"status": "ok", "route": "trade-stock", "broker": "alpaca", "symbol": "AAPL", "side": "buy", "qty": 1},
+        200,
+    )))
+    monkeypatch.setattr(function_module, "record_webhook_event", lambda event: None)
+
+    req = _make_request(
+        "**New Buy Signal:**\n"
+        "AAPL 5 Min Candle\n"
+        "Strategy: bollinger_mean_reversion\n"
+        "Mode: stock\n"
+        "Price: 189.50",
+        token="token",
+        route="trade",
+    )
+
+    resp = function_module.trade(req)
+    body = json.loads(resp.get_body())
+
+    assert resp.status_code == 200
+    assert body["route"] == "trade-stock"
+    assert "legacy_warning" in body
+    assert "/api/trade-stock" in body["legacy_warning"]
+
+
+def test_broker_selection_is_read_per_request(monkeypatch):
+    monkeypatch.setenv("STOCK_BROKER", "alpaca")
+    function_module = _reload_function_module(monkeypatch)
+    assert function_module.get_stock_broker() == "alpaca"
+
+    monkeypatch.setenv("STOCK_BROKER", "tastytrade")
+    assert function_module.get_stock_broker() == "tastytrade"

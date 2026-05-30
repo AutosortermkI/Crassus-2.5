@@ -44,6 +44,18 @@ AZURE_DEFAULTS = {
     "AZURE_RESOURCE_GROUP": "CRG",
     "AZURE_LOCATION": "eastus",
     "AZURE_STORAGE_ACCOUNT": "crassusstorage25",
+    "AZURE_DEV_STOCK_FUNCTION_APP_NAME": "crassus-dev-stock",
+    "AZURE_DEV_OPTIONS_FUNCTION_APP_NAME": "crassus-dev-options",
+    "AZURE_DEV_DASHBOARD_APP_NAME": "crassus-dev-dashboard",
+    "AZURE_DEV_STOCK_FUNCTION_BASE_URL": "",
+    "AZURE_DEV_OPTIONS_FUNCTION_BASE_URL": "",
+    "AZURE_DEV_DASHBOARD_BASE_URL": "",
+    "AZURE_PROD_STOCK_FUNCTION_APP_NAME": "crassus-prod-stock",
+    "AZURE_PROD_OPTIONS_FUNCTION_APP_NAME": "crassus-prod-options",
+    "AZURE_PROD_DASHBOARD_APP_NAME": "crassus-prod-dashboard",
+    "AZURE_PROD_STOCK_FUNCTION_BASE_URL": "",
+    "AZURE_PROD_OPTIONS_FUNCTION_BASE_URL": "",
+    "AZURE_PROD_DASHBOARD_BASE_URL": "",
     "AZURE_DASHBOARD_APP_NAME": "",
     "AZURE_DASHBOARD_PLAN_NAME": "",
     "AZURE_DASHBOARD_SKU": "F1",
@@ -60,12 +72,61 @@ TRUE_VALUES = {"1", "true", "yes", "on"}
 
 PARAM_DEFINITIONS = OrderedDict([
     # --- General Settings ---
+    ("ENVIRONMENT_NAME", {
+        "label": "Environment",
+        "group": "Environment",
+        "type": "text",
+        "default": "dev",
+        "description": "Deployment environment for this dashboard: dev or prod",
+    }),
+    ("STOCK_BROKER", {
+        "label": "Stock / Share Broker",
+        "group": "Broker Routing",
+        "type": "select",
+        "default": "alpaca",
+        "description": "Routes stock/share webhook orders to alpaca or tastytrade",
+    }),
+    ("OPTIONS_BROKER", {
+        "label": "Options Broker",
+        "group": "Broker Routing",
+        "type": "select",
+        "default": "tastytrade",
+        "description": "Routes options webhook orders to alpaca or tastytrade",
+    }),
     ("ORDER_BROKER", {
-        "label": "Execution Broker",
+        "label": "Legacy Execution Broker",
         "group": "General Settings",
         "type": "text",
-        "default": "tastytrade",
-        "description": "Broker used for live webhook execution: tastytrade or alpaca",
+        "default": "",
+        "description": "Legacy fallback only when STOCK_BROKER or OPTIONS_BROKER are missing",
+    }),
+    ("ENABLE_STOCK_TRADING", {
+        "label": "Enable Stock Trading Route",
+        "group": "General Settings",
+        "type": "bool",
+        "default": "true",
+        "description": "Allows the stock Function App to process stock/share alerts",
+    }),
+    ("ENABLE_OPTIONS_TRADING", {
+        "label": "Enable Options Trading Route",
+        "group": "General Settings",
+        "type": "bool",
+        "default": "false",
+        "description": "Allows the options Function App to process options alerts",
+    }),
+    ("ENABLE_TASTYTRADE_OPTIONS", {
+        "label": "Enable TastyTrade Options",
+        "group": "General Settings",
+        "type": "bool",
+        "default": "false",
+        "description": "Must remain false until TastyTrade contract-symbol routing is verified",
+    }),
+    ("OPTIONS_ALLOW_FALLBACK_TO_ALPACA", {
+        "label": "Options Fallback To Alpaca",
+        "group": "General Settings",
+        "type": "bool",
+        "default": "false",
+        "description": "Allows Alpaca options routing when OPTIONS_BROKER=tastytrade is not ready",
     }),
     ("ALPACA_PAPER", {
         "label": "Paper Trading Mode",
@@ -789,6 +850,107 @@ def get_azure_settings(overrides: Optional[dict] = None) -> dict:
     if overrides:
         env.update({key: str(value) for key, value in overrides.items()})
     return _build_azure_settings(env)
+
+
+def environment_name(env: Optional[dict] = None) -> str:
+    """Return the current dashboard environment, constrained to dev/prod."""
+    values = env or read_env()
+    name = (values.get("ENVIRONMENT_NAME") or "dev").strip().lower()
+    return "prod" if name == "prod" else "dev"
+
+
+def _env_value(env: dict, key: str, default_key: Optional[str] = None) -> str:
+    default = AZURE_DEFAULTS.get(default_key or key, "")
+    return (env.get(key) or default).strip()
+
+
+def resolve_broker_sync_targets(env: Optional[dict] = None) -> dict:
+    """Resolve the Azure apps this dashboard is allowed to update."""
+    values = env or read_env()
+    current_env = environment_name(values)
+    prefix = "AZURE_PROD" if current_env == "prod" else "AZURE_DEV"
+
+    stock_function = _env_value(values, f"{prefix}_STOCK_FUNCTION_APP_NAME")
+    options_function = _env_value(values, f"{prefix}_OPTIONS_FUNCTION_APP_NAME")
+    dashboard = _env_value(values, f"{prefix}_DASHBOARD_APP_NAME")
+
+    # Legacy names are only fallback names for the same environment; they never
+    # override explicit dev/prod names.
+    if not stock_function:
+        stock_function = _env_value(values, "AZURE_STOCK_FUNCTION_APP_NAME")
+    if not options_function:
+        options_function = _env_value(values, "AZURE_OPTIONS_FUNCTION_APP_NAME")
+    if not dashboard:
+        dashboard = _env_value(values, "AZURE_DASHBOARD_APP_NAME")
+
+    return {
+        "environment": current_env,
+        "resource_group": _env_value(values, "AZURE_RESOURCE_GROUP"),
+        "stock_function": stock_function,
+        "options_function": options_function,
+        "dashboard": dashboard,
+    }
+
+
+def _sync_one_app_setting(kind: str, app_name: str, resource_group: str, updates: dict) -> str:
+    if not app_name:
+        return "skipped"
+    env = read_env()
+    if _AZURE_MANAGEMENT_AVAILABLE:
+        subscription_id = _resolve_subscription_id({
+            "subscription_id": (env.get("AZURE_SUBSCRIPTION_ID") or "").strip(),
+        })
+        if subscription_id:
+            credential = None
+            client = None
+            try:
+                credential = DefaultAzureCredential(exclude_interactive_browser_credential=True)
+                client = WebSiteManagementClient(credential, subscription_id)
+                result = _sync_app_settings_with_management_api(client, resource_group, app_name, updates)
+                if result["ok"]:
+                    return "ok"
+            except Exception:
+                pass
+            finally:
+                if client is not None and hasattr(client, "close"):
+                    client.close()
+                if credential is not None and hasattr(credential, "close"):
+                    credential.close()
+
+    if not azure_cli_available():
+        return "error"
+
+    command_kind = "functionapp" if kind == "function" else "webapp"
+    settings_args = [f"{key}={value}" for key, value in updates.items()]
+    result = _run_azure_settings_command(
+        [
+            "az", command_kind, "config", "appsettings", "set",
+            "--name", app_name,
+            "--resource-group", resource_group,
+            "--settings",
+        ] + settings_args + ["--output", "none"],
+        f"{command_kind} {app_name}",
+    )
+    return "ok" if result["ok"] else "error"
+
+
+def sync_broker_settings_to_azure(updates: dict) -> dict:
+    """Sync broker routing only to the Azure apps for this dashboard environment."""
+    allowed_updates = {
+        key: str(value).strip().lower()
+        for key, value in updates.items()
+        if key in {"STOCK_BROKER", "OPTIONS_BROKER"}
+    }
+    if not allowed_updates:
+        return {"stock_function": "skipped", "options_function": "skipped", "dashboard": "skipped"}
+
+    targets = resolve_broker_sync_targets()
+    resource_group = targets["resource_group"]
+    return {
+        "stock_function": _sync_one_app_setting("function", targets["stock_function"], resource_group, allowed_updates),
+        "options_function": _sync_one_app_setting("function", targets["options_function"], resource_group, allowed_updates),
+        "dashboard": _sync_one_app_setting("webapp", targets["dashboard"], resource_group, allowed_updates),
+    }
 
 
 def get_azure_function_trade_url(env: Optional[dict] = None) -> str:

@@ -32,7 +32,7 @@ from config_manager import (
     get_config, save_config, save_credentials, save_tastytrade_credentials,
     read_env, SECRET_KEYS,
     ensure_dashboard_session_secret, ensure_webhook_token, get_azure_function_activity_url,
-    get_azure_function_trade_url, sync_settings_to_azure,
+    get_azure_function_trade_url, sync_broker_settings_to_azure, sync_settings_to_azure,
 )
 from alpaca_client import (
     get_account_summary, get_positions, get_recent_orders,
@@ -123,11 +123,26 @@ def _forwarding_target() -> tuple[str, str]:
 def _selected_broker() -> str:
     env = read_env()
     broker = (
-        env.get("ORDER_BROKER")
+        env.get("STOCK_BROKER")
+        or env.get("ORDER_BROKER")
         or env.get("BROKER")
         or "alpaca"
     ).strip().lower()
     return "tastytrade" if broker == "tastytrade" else "alpaca"
+
+
+def _normalize_broker_payload(data: dict) -> tuple[Optional[dict], Optional[str]]:
+    allowed = {"alpaca", "tastytrade"}
+    stock_broker = str(data.get("stock_broker") or "").strip().lower()
+    options_broker = str(data.get("options_broker") or "").strip().lower()
+    if stock_broker not in allowed:
+        return None, "stock_broker must be alpaca or tastytrade"
+    if options_broker not in allowed:
+        return None, "options_broker must be alpaca or tastytrade"
+    return {
+        "STOCK_BROKER": stock_broker,
+        "OPTIONS_BROKER": options_broker,
+    }, None
 
 
 def _json_bool(data: dict, key: str, default: bool) -> bool:
@@ -510,6 +525,48 @@ def api_save_config():
                 "message": f"Configuration saved locally. Azure sync failed: {azure_result['error']}",
                 "azure_error": azure_result["error"],
             })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/api/config/brokers", methods=["GET"])
+def api_get_brokers():
+    """Return broker routing and deployment metadata for the dashboard controls."""
+    try:
+        env = read_env()
+        environment_name = (env.get("ENVIRONMENT_NAME") or "dev").strip().lower()
+        if environment_name not in {"dev", "prod"}:
+            environment_name = "dev"
+        return jsonify({
+            "status": "ok",
+            "environment_name": environment_name,
+            "stock_broker": (env.get("STOCK_BROKER") or env.get("ORDER_BROKER") or "alpaca").strip().lower(),
+            "options_broker": (env.get("OPTIONS_BROKER") or env.get("ORDER_BROKER") or "tastytrade").strip().lower(),
+            "deployed_git_branch": (env.get("DEPLOYED_GIT_BRANCH") or "").strip(),
+            "deployed_git_sha": (env.get("DEPLOYED_GIT_SHA") or "").strip(),
+            "deployed_at_utc": (env.get("DEPLOYED_AT_UTC") or "").strip(),
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/api/config/brokers", methods=["POST"])
+def api_save_brokers():
+    """Save stock/options broker routing without changing live-trading gates."""
+    try:
+        data = request.get_json() or {}
+        updates, error = _normalize_broker_payload(data)
+        if error:
+            return jsonify({"status": "error", "message": error}), 400
+
+        save_config(updates)
+        azure_sync = sync_broker_settings_to_azure(updates)
+        return jsonify({
+            "status": "ok",
+            "stock_broker": updates["STOCK_BROKER"],
+            "options_broker": updates["OPTIONS_BROKER"],
+            "azure_sync": azure_sync,
+        })
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 

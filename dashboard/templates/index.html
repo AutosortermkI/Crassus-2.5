@@ -13,6 +13,7 @@
         <h1>Crassus <span>2.5</span></h1>
     </div>
     <div class="header-actions">
+        <span id="environmentBadge" class="badge badge-neutral">ENV</span>
         <span id="tradingBadge" class="badge badge-neutral">Webhook Ready</span>
         {% if dashboard_auth_enabled %}
         <form class="logout-form" method="post" action="/logout">
@@ -257,6 +258,50 @@
          TAB 3: Settings
          ============================================================ -->
     <div id="panel-settings" class="tab-panel">
+
+        <div class="card">
+            <div class="card-header">
+                <h2>Broker Routing</h2>
+                <div class="actions">
+                    <button class="btn btn-primary" id="saveBrokerRoutingBtn" onclick="saveBrokerRouting()">Save Routing</button>
+                </div>
+            </div>
+            <p class="card-description" id="brokerRoutingEnvironment">
+                Loading environment...
+            </p>
+
+            <div class="grid-auto">
+                <div class="field-row">
+                    <label for="stockBrokerSelect">Stock / Share Broker</label>
+                    <select class="input" id="stockBrokerSelect">
+                        <option value="alpaca">alpaca</option>
+                        <option value="tastytrade">tastytrade</option>
+                    </select>
+                </div>
+                <div class="field-row">
+                    <label for="optionsBrokerSelect">Options Broker</label>
+                    <select class="input" id="optionsBrokerSelect">
+                        <option value="alpaca">alpaca</option>
+                        <option value="tastytrade">tastytrade</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="signal-grid" style="margin-top: 12px;">
+                <div class="signal-item">
+                    <div class="label">Deployed Branch</div>
+                    <div class="value" id="deployedBranch">-</div>
+                </div>
+                <div class="signal-item">
+                    <div class="label">Commit SHA</div>
+                    <div class="value" id="deployedSha">-</div>
+                </div>
+                <div class="signal-item">
+                    <div class="label">Last Deployed</div>
+                    <div class="value" id="deployedAt">-</div>
+                </div>
+            </div>
+        </div>
 
         <div class="card">
             <div class="card-header">

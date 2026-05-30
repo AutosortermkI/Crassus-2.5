@@ -1,6 +1,6 @@
 # Crassus 2.5
 
-Azure Function that receives TradingView webhook alerts and routes stock bracket orders to **Tastytrade OTOCO** by default, with the prior Alpaca path retained as an optional fallback. Includes a local/hosted dashboard GUI for Tastytrade credential setup, TradingView webhook configuration, portfolio monitoring, and strategy parameter tuning. Ships with a built-in **backtesting engine** for replaying historical data through the same strategy logic used in live trading.
+Azure Function app that receives TradingView webhook alerts through split stock/options routes. Stock/share routing defaults to **Alpaca**, options routing defaults to **Tastytrade** with Tastytrade options disabled until contract-symbol routing is verified. Includes a local/hosted dashboard GUI for broker routing, Tastytrade credential setup, TradingView webhook configuration, portfolio monitoring, and strategy parameter tuning. Ships with a built-in **backtesting engine** for replaying historical data through the same strategy logic used in live trading.
 
 ---
 
@@ -12,7 +12,7 @@ cd Crassus-2.5
 ./run_dashboard.sh        # macOS / Linux
 ```
 
-That's it. The script auto-creates a virtual environment, installs the dashboard dependencies, and launches the UI at `http://localhost:5050`. On first launch you can wire in your Tastytrade account number, OAuth client secret, and refresh token, review the shared TradingView webhook URL, and confirm webhook activity is flowing through the shared Azure function.
+That's it. The script auto-creates a virtual environment, installs the dashboard dependencies, and launches the UI at `http://localhost:5050`. On first launch you can wire in your Tastytrade account number, OAuth client secret, and refresh token, review the split TradingView webhook URLs, and confirm webhook activity is flowing through the shared Azure function apps.
 
 **Windows:** Use `run_dashboard.bat` instead.
 
@@ -22,11 +22,31 @@ That's it. The script auto-creates a virtual environment, installs the dashboard
 |---|---|
 | `./setup.sh` | Full interactive setup (venv, deps, prompts for Tastytrade/webhook/dashboard access, `.env` generation) |
 | `./run_dashboard.sh` | Launch the dashboard GUI (auto-installs deps if needed) |
-| `./run_crassus.sh` | Run the Azure Function locally (`http://localhost:7071/api/trade`) |
+| `./run_crassus.sh` | Run the Azure Function locally (`/api/trade-stock`, `/api/trade-options`, and legacy `/api/trade`) |
 | `./run_tests.sh` | Run the automated test suite (manual live broker check excluded) |
-| `./deploy_azure.sh` | Deploy to Azure with a hosted dashboard and Key Vault-backed secrets |
+| `./deploy_azure.sh --env dev` | Deploy the current branch to shared dev |
+| `./deploy_azure.sh --env prod` | Deploy `main` to production after manual confirmation |
 
-All scripts have `.bat` equivalents for Windows.
+Most scripts have `.bat` equivalents for Windows. Split dev/prod deployment is implemented in `deploy_azure.sh`; `deploy_azure.bat --env ...` exits clearly until parity is added.
+
+See [Development Workflow](docs/development_workflow.md) for the Jeremy/Joe branch model, shared dev coordination, PR promotion flow, and production deploy rules.
+
+---
+
+## Dev / Prod Deployment Model
+
+- `main` is the last known good branch and the only production deploy source.
+- `jeremy/*` and `joe/*` branches may deploy to shared dev and must PR into `main`.
+- Shared dev uses separate stock, options, and dashboard Azure apps.
+- Production uses separate stock, options, and dashboard Azure apps.
+- DEV deployments overwrite the shared dev environment. Coordinate before deploying.
+
+```bash
+./deploy_azure.sh --env dev
+./deploy_azure.sh --env prod
+```
+
+The deploy script records `DEPLOYED_GIT_BRANCH`, `DEPLOYED_GIT_SHA`, and `DEPLOYED_AT_UTC` so the dashboard can show what branch is running.
 
 ---
 
@@ -49,8 +69,9 @@ The web dashboard (`http://localhost:5050`) provides:
 The dashboard's webhook widget gives you everything you need, but here's the manual process:
 
 1. **Get your webhook URL:**
-   - Local: `http://localhost:7071/api/trade`
-   - Azure: use the URL shown by the dashboard, which is derived from `AZURE_FUNCTION_BASE_URL` or `AZURE_FUNCTION_APP_NAME`
+   - Stock local: `http://localhost:7071/api/trade-stock`
+   - Options local: `http://localhost:7071/api/trade-options`
+   - Azure: use the stock/options URLs shown by the dashboard, derived from the active dev or prod Azure app settings.
 
 2. **In TradingView**, create or edit an alert on your indicator/strategy.
 
@@ -58,7 +79,7 @@ The dashboard's webhook widget gives you everything you need, but here's the man
 
 4. **Authenticate the webhook** — choose one method:
    - **Option A (query parameter):** Append `?token=YOUR_TOKEN` to the webhook URL, e.g.
-     `https://your-function.azurewebsites.net/api/trade?token=your-secret-token`
+     `https://your-function.azurewebsites.net/api/trade-stock?token=your-secret-token`
    - **Option B (custom header):** If your TradingView plan supports custom headers, add `X-Webhook-Token: YOUR_TOKEN` as a header.
 
 5. **Set the alert message** to one of these templates:
@@ -115,7 +136,7 @@ TradingView sends JSON with a `content` multi-line string:
 
 ```
 function_app/
-├── function_app.py          # HTTP trigger (POST /api/trade) + timer trigger (exit monitor)
+├── function_app.py          # HTTP triggers (/api/trade-stock, /api/trade-options, legacy /api/trade) + timer trigger
 ├── parser.py                # Webhook content parsing (regex-based)
 ├── strategy.py              # Strategy config + TP/SL/stop-limit computation
 ├── stock_orders.py          # Alpaca fallback stock bracket order submission
@@ -182,7 +203,8 @@ run_tests.sh / .bat          # Test runner
 TradingView alert fires
         │
         ▼
-  POST /api/trade?token=... (or Header: X-Webhook-Token)
+  POST /api/trade-stock or /api/trade-options
+  token=... query param or Header: X-Webhook-Token
   Body: { "content": "..." }
         │
         ├─ 401  invalid / missing token
@@ -200,13 +222,13 @@ TradingView alert fires
         ▼
   Route by mode
         │
-        ├─ mode=stock ────► Tastytrade OTOCO stock bracket order by default
+        ├─ mode=stock ────► Broker selected by STOCK_BROKER
         │                       TP / SL / stop-limit from strategy %
         │                       Day entry, GTC exits unless configured otherwise
         │
-        └─ mode=options ──► Alpaca fallback path only for now
-                             Tastytrade options are blocked with HTTP 501 until
-                             contract-symbol routing is verified end-to-end
+        └─ mode=options ──► Broker selected by OPTIONS_BROKER
+                             Tastytrade options are blocked with HTTP 501 by
+                             default until contract-symbol routing is verified
                              Screen option contracts (Yahoo + Greeks)
                              ► Risk-size qty from MAX_DOLLAR_RISK
                              ► Submit limit entry order (DAY)
@@ -450,7 +472,7 @@ for name, sm in metrics.by_strategy.items():
 
 ### Data source vs execution venue
 
-Current status: options execution is still on the legacy Alpaca fallback path. If `ORDER_BROKER=tastytrade` and an alert requests `Mode: options`, the Function returns HTTP 501 instead of sending an unverified option order.
+Current status: options execution remains safe by default. If `OPTIONS_BROKER=tastytrade` and `ENABLE_TASTYTRADE_OPTIONS=false`, the Function returns HTTP 501 instead of sending an unverified option order.
 
 | Concern | Source | Why |
 |---|---|---|
@@ -520,21 +542,23 @@ When Yahoo Finance is enabled (default), the screener:
 
 ## Azure Deployment
 
-### One-command deploy
+### Profile deploy
 
 ```bash
-./deploy_azure.sh
+./deploy_azure.sh --env dev
+./deploy_azure.sh --env prod
 ```
 
 This script:
-1. Validates Azure CLI and Functions Core Tools are installed
-2. Creates a minimal `.env` when one does not exist, then reads any optional deployment settings from it
-3. Creates or updates: resource group, storage account, Function App, App Service plan, hosted dashboard Web App, and Azure Key Vault
-4. Stores any locally supplied hosted secrets in Azure Key Vault and pushes Key Vault references into the Function App and dashboard App Settings
-5. Enables managed identities on the Function App and dashboard so GUI-based setting changes can sync Azure app settings and hosted secrets safely
-6. Deploys the function code with `func azure functionapp publish`
-7. Deploys the dashboard code to Azure App Service and prints both shared URLs
-8. Lets you enter Tastytrade credentials from the hosted dashboard after deployment, without putting those broker secrets in local `.env`
+1. Validates Azure CLI, Functions Core Tools, Python, Git, and curl are installed.
+2. Creates a minimal `.env` when one does not exist, then reads deployment settings from it.
+3. Resolves the dev or prod stock Function App, options Function App, and dashboard Web App.
+4. Aborts prod deploys unless the current branch is `main`.
+5. Requires typing `DEPLOY PROD` before deploying production.
+6. Warns that dev deploys overwrite the shared dev environment.
+7. Pushes stock-specific, options-specific, dashboard, and deployed-branch metadata app settings.
+8. Deploys the same `function_app` package to both Function Apps.
+9. Deploys the dashboard package and prints stock/options/legacy webhook URLs.
 
 **Prerequisites:**
 - [Azure CLI](https://docs.microsoft.com/en-us/cli/azure/install-azure-cli) (`brew install azure-cli`)
@@ -548,17 +572,21 @@ This script:
 |---|---|---|
 | Resource Group | `CRG` by default | Container for all resources |
 | Storage Account | `crassusstorage25` by default | Required by Azure Functions |
-| Function App | `crassus-25` by default | Hosts the trading function (Linux, Python 3.11, Consumption plan) |
+| DEV Stock Function App | `crassus-dev-stock` by default | Hosts `/api/trade-stock` in shared dev |
+| DEV Options Function App | `crassus-dev-options` by default | Hosts `/api/trade-options` in shared dev |
+| DEV Dashboard Web App | `crassus-dev-dashboard` by default | Shared dev dashboard |
+| PROD Stock Function App | `crassus-prod-stock` by default | Hosts `/api/trade-stock` in production |
+| PROD Options Function App | `crassus-prod-options` by default | Hosts `/api/trade-options` in production |
+| PROD Dashboard Web App | `crassus-prod-dashboard` by default | Production dashboard |
 | Dashboard App Service Plan | Derived from the dashboard app name by default | Hosts the shared Flask dashboard |
-| Dashboard Web App | Derived from the function app name by default | Shared partner-facing dashboard UI |
-| Azure Key Vault | Derived from the storage account name by default | Stores hosted secrets and password hashes |
-| Application Insights | Matches the Function App by default | Logging and monitoring |
 
 ### Functions
 
 | Function | Trigger | Schedule | Purpose |
 |---|---|---|---|
-| `trade` | HTTP POST | On-demand | Receives TradingView webhooks, places orders |
+| `trade_stock` | HTTP POST `/api/trade-stock` | On-demand | Receives stock/share TradingView webhooks |
+| `trade_options` | HTTP POST `/api/trade-options` | On-demand | Receives options TradingView webhooks |
+| `trade` | HTTP POST `/api/trade` | On-demand | Legacy route that warns and routes by `mode` |
 | `check_options_exits_timer` | Timer | Every 60 seconds | Monitors options positions for TP/SL exits |
 
 ### Customizing resource names
@@ -568,15 +596,15 @@ Set these values in `.env` before running `./deploy_azure.sh` only if you want t
 AZURE_RESOURCE_GROUP="CRG"
 AZURE_LOCATION="eastus"
 AZURE_STORAGE_ACCOUNT="crassusstorage25"
-AZURE_FUNCTION_APP_NAME="crassus-25"
-AZURE_FUNCTION_BASE_URL="https://crassus-25.azurewebsites.net"
 AZURE_SUBSCRIPTION_ID=""
-AZURE_DASHBOARD_APP_NAME="crassus-25-dashboard"
-AZURE_DASHBOARD_PLAN_NAME="crassus-25-dashboard-plan"
+AZURE_DEV_STOCK_FUNCTION_APP_NAME="crassus-dev-stock"
+AZURE_DEV_OPTIONS_FUNCTION_APP_NAME="crassus-dev-options"
+AZURE_DEV_DASHBOARD_APP_NAME="crassus-dev-dashboard"
+AZURE_PROD_STOCK_FUNCTION_APP_NAME="crassus-prod-stock"
+AZURE_PROD_OPTIONS_FUNCTION_APP_NAME="crassus-prod-options"
+AZURE_PROD_DASHBOARD_APP_NAME="crassus-prod-dashboard"
+AZURE_DASHBOARD_PLAN_NAME=""
 AZURE_DASHBOARD_SKU="F1"
-AZURE_USE_KEY_VAULT="true"
-AZURE_KEY_VAULT_NAME=""
-AZURE_KEY_VAULT_SECRET_PREFIX=""
 ```
 
 ---
@@ -589,13 +617,17 @@ All variables are configurable via the dashboard UI or directly in `.env`.
 
 | Variable | Description |
 |---|---|
-| `ORDER_BROKER` | `tastytrade` for the current default broker path, or `alpaca` for fallback |
+| `STOCK_BROKER` | Stock/share route broker: `alpaca` or `tastytrade` |
+| `OPTIONS_BROKER` | Options route broker: `alpaca` or `tastytrade` |
+| `ORDER_BROKER` | Legacy fallback only when split broker settings are missing |
 | `TASTYTRADE_ACCOUNT_NUMBER` | Tastytrade account number; can be entered in the hosted dashboard after deployment |
 | `TASTYTRADE_CLIENT_SECRET` | Tastytrade OAuth client secret; can be entered in the hosted dashboard after deployment and stored in Key Vault |
 | `TASTYTRADE_REFRESH_TOKEN` | Tastytrade OAuth refresh token; can be entered in the hosted dashboard after deployment and stored in Key Vault |
 | `WEBHOOK_AUTH_TOKEN` | Shared secret (via `X-Webhook-Token` header or `?token=` query param) |
+| `STOCK_WEBHOOK_AUTH_TOKEN` | Optional stock route token; falls back to `WEBHOOK_AUTH_TOKEN` |
+| `OPTIONS_WEBHOOK_AUTH_TOKEN` | Optional options route token; falls back to `WEBHOOK_AUTH_TOKEN` |
 
-The Azure deployment itself does not require Tastytrade credentials in local `.env`. If they are missing, deployment continues with `ORDER_BROKER=tastytrade`, `TASTYTRADE_IS_TEST=true`, and `TASTYTRADE_DRY_RUN=true`; the hosted dashboard will show broker credentials as missing until you enter them there.
+The Azure deployment itself does not require Tastytrade credentials in local `.env`. If they are missing, deployment continues with safe test/dry-run defaults; the hosted dashboard will show broker credentials as missing until you enter them there.
 
 ### Optional (with defaults)
 
@@ -603,6 +635,8 @@ The Azure deployment itself does not require Tastytrade credentials in local `.e
 |---|---|---|
 | `TASTYTRADE_IS_TEST` | `true` | `true` = Tastytrade cert/test API, `false` = production API |
 | `TASTYTRADE_DRY_RUN` | `true` | Validate stock OTOCO payloads with Tastytrade dry-run endpoints without routing orders |
+| `ENABLE_TASTYTRADE_OPTIONS` | `false` | Keep Tastytrade options disabled until contract-symbol routing is verified |
+| `OPTIONS_ALLOW_FALLBACK_TO_ALPACA` | `false` | Allow explicit Alpaca fallback when options broker is Tastytrade |
 | `TASTYTRADE_ENTRY_TIME_IN_FORCE` | `Day` | Time-in-force for the opening OTOCO order |
 | `TASTYTRADE_EXIT_TIME_IN_FORCE` | `GTC` | Time-in-force for take-profit and stop exit orders |
 | `TASTYTRADE_STOP_ORDER_TYPE` | `Stop Limit` | Stop or Stop Limit exit order |
@@ -697,7 +731,7 @@ All responses include a `correlation_id` for log tracing in Application Insights
 
 ```bash
 # Stock buy signal (bollinger_mean_reversion)
-curl -X POST http://localhost:7071/api/trade \
+curl -X POST http://localhost:7071/api/trade-stock \
   -H "Content-Type: application/json" \
   -H "X-Webhook-Token: your-secret-token" \
   -d '{
@@ -772,7 +806,9 @@ If you prefer to set things up manually instead of using the scripts:
    cd function_app
    func start
    ```
-   Endpoint: `http://localhost:7071/api/trade` (POST)
+   Stock endpoint: `http://localhost:7071/api/trade-stock` (POST)
+   Options endpoint: `http://localhost:7071/api/trade-options` (POST)
+   Legacy endpoint: `http://localhost:7071/api/trade` (POST)
 
 5. **Run tests**
    ```bash
@@ -782,10 +818,10 @@ If you prefer to set things up manually instead of using the scripts:
 
 6. **Deploy to Azure**
    ```bash
-   ./deploy_azure.sh
+   ./deploy_azure.sh --env dev
    ```
-   This deploys both the Function App and the hosted dashboard.
-   The shared dashboard URL will be `https://<AZURE_DASHBOARD_APP_NAME>.azurewebsites.net`.
+   This deploys the stock Function App, options Function App, and hosted dashboard for the selected environment.
+   Production deploys use `./deploy_azure.sh --env prod` from `main` and require typing `DEPLOY PROD`.
 
 ---
 

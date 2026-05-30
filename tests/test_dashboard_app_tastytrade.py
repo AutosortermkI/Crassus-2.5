@@ -124,3 +124,71 @@ def test_credentials_save_verifies_submitted_tastytrade_values_before_azure_sync
         is_test=True,
     )
     legacy_verify.assert_not_called()
+
+
+def test_config_brokers_saves_valid_values_and_syncs_without_live_flags(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "ENVIRONMENT_NAME=dev\n"
+        "STOCK_BROKER=alpaca\n"
+        "OPTIONS_BROKER=tastytrade\n"
+        "ALPACA_PAPER=true\n"
+        "TASTYTRADE_DRY_RUN=true\n"
+        "ENABLE_TASTYTRADE_OPTIONS=false\n"
+    )
+    monkeypatch.setattr(config_manager, "ENV_PATH", env_path)
+    monkeypatch.delenv("WEBSITE_SITE_NAME", raising=False)
+
+    module = _load_app_module("dashboard_app_broker_config_save_test")
+    sync = MagicMock(return_value={
+        "stock_function": "ok",
+        "options_function": "ok",
+        "dashboard": "ok",
+    })
+    monkeypatch.setattr(module, "sync_broker_settings_to_azure", sync)
+
+    response = module.app.test_client().post(
+        "/api/config/brokers",
+        json={"stock_broker": "tastytrade", "options_broker": "alpaca"},
+    )
+    body = response.get_json()
+
+    assert response.status_code == 200
+    assert body == {
+        "status": "ok",
+        "stock_broker": "tastytrade",
+        "options_broker": "alpaca",
+        "azure_sync": {
+            "stock_function": "ok",
+            "options_function": "ok",
+            "dashboard": "ok",
+        },
+    }
+    saved = env_path.read_text()
+    assert "STOCK_BROKER=tastytrade" in saved
+    assert "OPTIONS_BROKER=alpaca" in saved
+    assert "ALPACA_PAPER=true" in saved
+    assert "TASTYTRADE_DRY_RUN=true" in saved
+    assert "ENABLE_TASTYTRADE_OPTIONS=false" in saved
+    sync.assert_called_once_with({"STOCK_BROKER": "tastytrade", "OPTIONS_BROKER": "alpaca"})
+
+
+def test_config_brokers_rejects_invalid_values(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text("ENVIRONMENT_NAME=dev\n")
+    monkeypatch.setattr(config_manager, "ENV_PATH", env_path)
+    monkeypatch.delenv("WEBSITE_SITE_NAME", raising=False)
+
+    module = _load_app_module("dashboard_app_broker_config_invalid_test")
+    monkeypatch.setattr(module, "sync_broker_settings_to_azure", MagicMock())
+
+    response = module.app.test_client().post(
+        "/api/config/brokers",
+        json={"stock_broker": "alpaca", "options_broker": "paperclip"},
+    )
+    body = response.get_json()
+
+    assert response.status_code == 400
+    assert body["status"] == "error"
+    assert "options_broker" in body["message"]
+    module.sync_broker_settings_to_azure.assert_not_called()
