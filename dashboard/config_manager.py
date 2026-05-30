@@ -70,6 +70,9 @@ AZURE_DEFAULTS = {
     "AZURE_USE_KEY_VAULT": "true",
     "AZURE_KEY_VAULT_NAME": "",
     "AZURE_KEY_VAULT_SECRET_PREFIX": "",
+    "DEPLOYED_GIT_BRANCH": "",
+    "DEPLOYED_GIT_SHA": "",
+    "DEPLOYED_AT_UTC": "",
 }
 
 TRUE_VALUES = {"1", "true", "yes", "on"}

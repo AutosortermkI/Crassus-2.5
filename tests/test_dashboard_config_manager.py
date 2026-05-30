@@ -227,6 +227,23 @@ def test_resolve_broker_sync_targets_allows_dashboard_resource_group_override(tm
     assert targets["dashboard_resource_group"] == "CRG-staging"
 
 
+def test_read_env_includes_deployed_metadata_from_host_env(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text("")
+
+    monkeypatch.setattr(config_manager, "ENV_PATH", env_path)
+    monkeypatch.setenv("WEBSITE_SITE_NAME", "hosted-dashboard")
+    monkeypatch.setenv("DEPLOYED_GIT_BRANCH", "jeremy/split-stock-options-routing")
+    monkeypatch.setenv("DEPLOYED_GIT_SHA", "abc123")
+    monkeypatch.setenv("DEPLOYED_AT_UTC", "2026-05-30T02:00:00+00:00")
+
+    values = config_manager.read_env()
+
+    assert values["DEPLOYED_GIT_BRANCH"] == "jeremy/split-stock-options-routing"
+    assert values["DEPLOYED_GIT_SHA"] == "abc123"
+    assert values["DEPLOYED_AT_UTC"] == "2026-05-30T02:00:00+00:00"
+
+
 def test_resolve_broker_sync_targets_uses_prod_apps_for_prod_dashboard(tmp_path, monkeypatch):
     env_path = tmp_path / ".env"
     env_path.write_text(
