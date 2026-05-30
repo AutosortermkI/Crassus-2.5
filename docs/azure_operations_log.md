@@ -102,3 +102,43 @@ After the restart:
 
 - The deployed password value is intentionally not recorded here.
 - The change is configuration-only for dev; no dashboard source-code change was required.
+
+## 2026-05-30 - Mirror Password Dashboard To Original Production URL
+
+Branch: `jeremy/split-stock-options-routing`
+
+### Goal
+
+- Temporarily mirror the dev dashboard password gate to the original production dashboard URL at `https://crassus-25-dashboard.azurewebsites.net`.
+- Keep the exact old production URL.
+- Do not use this as the normal forward deployment path; future production deployments should go through `main`.
+- Keep the plaintext dashboard password out of Git and out of tracked documentation.
+
+### Actions
+
+- Confirmed there is no separate `crassus-prod-dashboard` Web App in `CRG`; the original production dashboard Web App is `crassus-25-dashboard`.
+- Copied the dev dashboard password hash into `DASHBOARD_ACCESS_PASSWORD_HASH` on `crassus-25-dashboard`.
+- Left `DASHBOARD_ACCESS_PASSWORD` blank so the plaintext password is not stored as an App Setting.
+- Kept `DASHBOARD_SESSION_SECRET` on its existing Key Vault reference.
+- Attempted to store the hash in Key Vault first, but the current Azure identity did not have `secrets/setSecret` permission, so the hash was stored directly as an App Setting for this mirror.
+- Redeployed the known password-auth dashboard snapshot from commit `97fac0cfdb57a69dfd4bb6e0b15047df72dfa9c6`.
+- The first production redeploy was interrupted by an App Service/SCM restart and left `wwwroot` incomplete. A clean redeploy restored the package.
+- Refreshed deployed metadata:
+  - `DEPLOYED_GIT_BRANCH=jeremy/split-stock-options-routing`
+  - `DEPLOYED_GIT_SHA=97fac0cfdb57a69dfd4bb6e0b15047df72dfa9c6`
+
+### Verification
+
+After the clean redeploy and metadata refresh:
+
+- Anonymous `GET /` returned HTTP `302` to `/login?next=/`.
+- `GET /login` returned HTTP `200`.
+- Anonymous `GET /api/credentials/check` returned HTTP `401`.
+- Login with the configured password returned the dashboard.
+- Authenticated `GET /` returned HTTP `200`.
+- Authenticated `GET /api/credentials/check` returned `status=ok`, `broker=alpaca`, and `paper=true`.
+
+### Notes
+
+- The deployed password value and hash are intentionally not recorded here.
+- Azure CLI's startup tracker timed out on one clean redeploy attempt, but Kudu recorded the deployment as successful and the site passed the external HTTP/auth checks afterward.
