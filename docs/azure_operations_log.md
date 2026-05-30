@@ -66,3 +66,39 @@ After the cleanup:
 
 - No Azure quota increase was required. The workaround was to keep the original hostnames and move their shared dashboard plan to `B1`.
 - Do not recreate the `CRG-staging-03121938` resources for normal dev deployment. Use the exact dev dashboard app in `CRG`.
+
+## 2026-05-30 - Restore Dev Dashboard Login
+
+Branch: `jeremy/split-stock-options-routing`
+
+### Goal
+
+- Restore the shared password gate on the dev dashboard at `https://crassus-dev-dashboard.azurewebsites.net`.
+- Keep the plaintext dashboard password out of Git and out of tracked documentation.
+
+### Actions
+
+- Confirmed the dashboard login code was already present and controlled by Azure App Settings:
+  - `DASHBOARD_ACCESS_PASSWORD`
+  - `DASHBOARD_ACCESS_PASSWORD_HASH`
+  - `DASHBOARD_SESSION_SECRET`
+- Set `DASHBOARD_ACCESS_PASSWORD_HASH` on Web App `crassus-dev-dashboard` in resource group `CRG`.
+- Set a stable `DASHBOARD_SESSION_SECRET` on the same Web App.
+- Left `DASHBOARD_ACCESS_PASSWORD` blank so the plaintext password is not stored as an App Setting.
+- Restarted `crassus-dev-dashboard`.
+
+### Verification
+
+After the restart:
+
+- Anonymous `GET /` returned HTTP `302` to `/login?next=/`.
+- Anonymous `GET /api/credentials/check` returned HTTP `401`.
+- `GET /login` rendered the dashboard password form.
+- Login with the configured password created a `crassus_dashboard_session` cookie.
+- Authenticated `GET /` returned HTTP `200`.
+- Authenticated `GET /api/credentials/check` returned `status=ok`, `broker=alpaca`, and `paper=true`.
+
+### Notes
+
+- The deployed password value is intentionally not recorded here.
+- The change is configuration-only for dev; no dashboard source-code change was required.
