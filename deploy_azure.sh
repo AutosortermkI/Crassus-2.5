@@ -184,6 +184,7 @@ ensure_dashboard_app() {
     fi
 
     local plan_id
+    local plan_arg
     plan_id="$(dashboard_plan_id)"
     if [ -n "$plan_id" ]; then
         echo "[OK] Using existing dashboard plan \"$DASHBOARD_PLAN_NAME\" in \"$DASHBOARD_PLAN_RESOURCE_GROUP\"."
@@ -198,11 +199,12 @@ ensure_dashboard_app() {
             --output none
         plan_id="$(dashboard_plan_id)"
     fi
+    plan_arg="$(dashboard_plan_arg)"
 
     echo "Creating Dashboard Web App \"$DASHBOARD_APP_NAME\"..."
-    az webapp create \
+    MSYS_NO_PATHCONV=1 az webapp create \
         --resource-group "$DASHBOARD_RESOURCE_GROUP" \
-        --plan "$plan_id" \
+        --plan "$plan_arg" \
         --name "$DASHBOARD_APP_NAME" \
         --runtime "PYTHON:$PYTHON_VERSION" \
         --output none
@@ -214,6 +216,14 @@ dashboard_plan_id() {
         --resource-group "$DASHBOARD_PLAN_RESOURCE_GROUP" \
         --query id \
         --output tsv 2>/dev/null || true
+}
+
+dashboard_plan_arg() {
+    if [ "$DASHBOARD_PLAN_RESOURCE_GROUP" = "$DASHBOARD_RESOURCE_GROUP" ]; then
+        printf '%s' "$DASHBOARD_PLAN_NAME"
+    else
+        dashboard_plan_id
+    fi
 }
 
 ensure_dashboard_can_start() {

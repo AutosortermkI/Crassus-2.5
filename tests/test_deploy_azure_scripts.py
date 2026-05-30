@@ -67,6 +67,8 @@ def test_unix_deploy_supports_existing_dashboard_plan_and_quota_preflight():
     assert "AZURE_DEV_DASHBOARD_RESOURCE_GROUP" in script
     assert "AZURE_DASHBOARD_PLAN_RESOURCE_GROUP" in script
     assert "dashboard_plan_id" in script
+    assert "dashboard_plan_arg" in script
+    assert "MSYS_NO_PATHCONV=1 az webapp create" in script
     assert "Dashboard Web App is in QuotaExceeded state" in script
 
 
