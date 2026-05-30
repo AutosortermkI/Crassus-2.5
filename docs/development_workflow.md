@@ -23,7 +23,8 @@ Shared dev:
 - Stock Function App: `crassus-dev-stock`
 - Options Function App: `crassus-dev-options`
 - Dashboard Web App: `crassus-dev-dashboard`
-- If the default dashboard App Service plan has no quota, set `AZURE_DEV_DASHBOARD_RESOURCE_GROUP`, `AZURE_DEV_DASHBOARD_PLAN_RESOURCE_GROUP`, and `AZURE_DEV_DASHBOARD_PLAN_NAME` to an existing non-exhausted plan before deploying.
+- Dashboard App Service plan: `crassus-25-dashboard-plan` in `CRG`, currently `B1`.
+- Historical quota issue note: the old dashboard URLs are preserved on the `B1` plan. Do not point dev deploys back at deleted staging resources.
 
 Production:
 
@@ -106,3 +107,7 @@ These dropdowns change routing only. They do not alter `ALPACA_PAPER`, `TASTYTRA
 - Production deploy requires `main` and typing `DEPLOY PROD`.
 
 The deployment script sets `DEPLOYED_GIT_BRANCH`, `DEPLOYED_GIT_SHA`, and `DEPLOYED_AT_UTC` in Azure app settings so the dashboard can show what is currently deployed.
+
+## Azure Operations Trail
+
+Operational Azure changes that are not represented directly by source code commits are recorded in [Azure Operations Log](azure_operations_log.md), including the 2026-05-30 B1 dashboard plan update and staging resource cleanup.
