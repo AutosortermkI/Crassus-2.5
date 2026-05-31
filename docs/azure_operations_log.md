@@ -142,3 +142,52 @@ After the clean redeploy and metadata refresh:
 
 - The deployed password value and hash are intentionally not recorded here.
 - Azure CLI's startup tracker timed out on one clean redeploy attempt, but Kudu recorded the deployment as successful and the site passed the external HTTP/auth checks afterward.
+
+## 2026-05-31 - Deploy Split Stock And Options Webhook URLs
+
+Branch: `jeremy/split-stock-options-routing`
+
+### Goal
+
+- Replace the dashboard's legacy single TradingView webhook URL with separate stock/share and options URLs.
+- Deploy the same branch commit to dev and the original production URLs.
+- Keep production on the existing `crassus-25` Function App and `crassus-25-dashboard` dashboard URL.
+
+### Code Deployed
+
+- Commit `aa90700498cf2eb23ecb345c8f46c1e3297dd335`.
+- Added production defaults that map both split production routes to `https://crassus-25.azurewebsites.net`.
+- Updated `deploy_azure.sh` to support co-hosted stock/options routes in one Function App.
+- Fixed the dashboard test-webhook endpoint so it uses the stock split route instead of the removed single-route helper.
+
+### Azure Targets
+
+- Dev dashboard: `crassus-dev-dashboard`
+- Dev stock Function App: `crassus-dev-stock`
+- Dev options Function App: `crassus-dev-options`
+- Production dashboard: `crassus-25-dashboard`
+- Production Function App: `crassus-25`
+
+### Verification
+
+- Local `python -m pytest` equivalent through `.venv\Scripts\python.exe -m pytest` passed: `349 passed`.
+- Dev dashboard `/api/webhook/info` returned:
+  - Stock: `https://crassus-dev-stock.azurewebsites.net/api/trade-stock`
+  - Options: `https://crassus-dev-options.azurewebsites.net/api/trade-options`
+- Production dashboard `/api/webhook/info` returned:
+  - Stock: `https://crassus-25.azurewebsites.net/api/trade-stock`
+  - Options: `https://crassus-25.azurewebsites.net/api/trade-options`
+- Both dashboards still require login:
+  - Anonymous `GET /` returned HTTP `302` to `/login?next=/`.
+  - Anonymous `GET /api/webhook/info` returned HTTP `401`.
+- Both authenticated dashboard `/api/credentials/check` endpoints returned `status=ok`, `broker=alpaca`, and `paper=true`.
+- Unauthenticated route probes returned HTTP `401` for:
+  - `https://crassus-dev-stock.azurewebsites.net/api/trade-stock`
+  - `https://crassus-dev-options.azurewebsites.net/api/trade-options`
+  - `https://crassus-25.azurewebsites.net/api/trade-stock`
+  - `https://crassus-25.azurewebsites.net/api/trade-options`
+
+### Notes
+
+- The production dashboard deploy initially hung in Kudu with `dashboard_wsgi.py` missing from `wwwroot`; restarting the Web App and rerunning the same clean zip deploy restored the package.
+- No webhook tokens, dashboard passwords, or password hashes are recorded here.
