@@ -56,6 +56,58 @@ def test_get_azure_settings_exposes_dashboard_hosting_fields(tmp_path, monkeypat
     assert settings["dashboard_sku"] == "P1V3"
 
 
+def test_split_trade_urls_use_environment_specific_function_apps(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "ENVIRONMENT_NAME=dev\n"
+        "AZURE_FUNCTION_APP_NAME=legacy-app\n"
+        "AZURE_DEV_STOCK_FUNCTION_BASE_URL=https://dev-stock.azurewebsites.net\n"
+        "AZURE_DEV_OPTIONS_FUNCTION_BASE_URL=https://dev-options.azurewebsites.net\n"
+        "AZURE_PROD_STOCK_FUNCTION_BASE_URL=https://prod-stock.azurewebsites.net\n"
+        "AZURE_PROD_OPTIONS_FUNCTION_BASE_URL=https://prod-options.azurewebsites.net\n"
+    )
+
+    monkeypatch.setattr(config_manager, "ENV_PATH", env_path)
+    monkeypatch.delenv("WEBSITE_SITE_NAME", raising=False)
+
+    urls = config_manager.get_azure_function_trade_urls()
+    activity_urls = config_manager.get_azure_function_activity_urls()
+
+    assert urls == {
+        "stock": "https://dev-stock.azurewebsites.net/api/trade-stock",
+        "options": "https://dev-options.azurewebsites.net/api/trade-options",
+    }
+    assert activity_urls == {
+        "stock": "https://dev-stock.azurewebsites.net/api/webhook-activity",
+        "options": "https://dev-options.azurewebsites.net/api/webhook-activity",
+    }
+    assert "legacy-app" not in " ".join(urls.values())
+
+
+def test_prod_defaults_keep_original_function_app_url_with_split_routes(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text("ENVIRONMENT_NAME=prod\n")
+
+    monkeypatch.setattr(config_manager, "ENV_PATH", env_path)
+    monkeypatch.delenv("WEBSITE_SITE_NAME", raising=False)
+
+    urls = config_manager.get_azure_function_trade_urls()
+    activity_urls = config_manager.get_azure_function_activity_urls()
+    targets = config_manager.resolve_broker_sync_targets()
+
+    assert urls == {
+        "stock": "https://crassus-25.azurewebsites.net/api/trade-stock",
+        "options": "https://crassus-25.azurewebsites.net/api/trade-options",
+    }
+    assert activity_urls == {
+        "stock": "https://crassus-25.azurewebsites.net/api/webhook-activity",
+        "options": "https://crassus-25.azurewebsites.net/api/webhook-activity",
+    }
+    assert targets["stock_function"] == "crassus-25"
+    assert targets["options_function"] == "crassus-25"
+    assert targets["dashboard"] == "crassus-25-dashboard"
+
+
 def test_get_azure_settings_defaults_key_vault_name_from_storage_account(tmp_path, monkeypatch):
     env_path = tmp_path / ".env"
     env_path.write_text("AZURE_STORAGE_ACCOUNT=crassusstg03121938\n")
@@ -169,3 +221,99 @@ def test_prepare_azure_app_settings_hashes_plain_dashboard_password():
     assert app_updates["DASHBOARD_ACCESS_PASSWORD"] == ""
     assert "DASHBOARD_ACCESS_PASSWORD_HASH" in app_updates
     assert check_password_hash(app_updates["DASHBOARD_ACCESS_PASSWORD_HASH"], "letmein")
+
+
+def test_get_config_exposes_split_broker_routing_defaults(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text("")
+
+    monkeypatch.setattr(config_manager, "ENV_PATH", env_path)
+    monkeypatch.delenv("WEBSITE_SITE_NAME", raising=False)
+
+    config = config_manager.get_config()
+
+    assert config["ENVIRONMENT_NAME"]["value"] == "dev"
+    assert config["STOCK_BROKER"]["value"] == "alpaca"
+    assert config["OPTIONS_BROKER"]["value"] == "tastytrade"
+    assert config["ENABLE_TASTYTRADE_OPTIONS"]["value"] == "false"
+
+
+def test_resolve_broker_sync_targets_uses_dev_apps_for_dev_dashboard(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "ENVIRONMENT_NAME=dev\n"
+        "AZURE_RESOURCE_GROUP=CRG\n"
+        "AZURE_DEV_STOCK_FUNCTION_APP_NAME=dev-stock\n"
+        "AZURE_DEV_OPTIONS_FUNCTION_APP_NAME=dev-options\n"
+        "AZURE_DEV_DASHBOARD_APP_NAME=dev-dashboard\n"
+        "AZURE_PROD_STOCK_FUNCTION_APP_NAME=prod-stock\n"
+        "AZURE_PROD_OPTIONS_FUNCTION_APP_NAME=prod-options\n"
+        "AZURE_PROD_DASHBOARD_APP_NAME=prod-dashboard\n"
+    )
+
+    monkeypatch.setattr(config_manager, "ENV_PATH", env_path)
+    targets = config_manager.resolve_broker_sync_targets()
+
+    assert targets["environment"] == "dev"
+    assert targets["stock_function"] == "dev-stock"
+    assert targets["options_function"] == "dev-options"
+    assert targets["dashboard"] == "dev-dashboard"
+    assert "prod" not in " ".join(targets.values())
+
+
+def test_resolve_broker_sync_targets_allows_dashboard_resource_group_override(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "ENVIRONMENT_NAME=dev\n"
+        "AZURE_RESOURCE_GROUP=CRG\n"
+        "AZURE_DEV_DASHBOARD_RESOURCE_GROUP=CRG-staging\n"
+        "AZURE_DEV_STOCK_FUNCTION_APP_NAME=dev-stock\n"
+        "AZURE_DEV_OPTIONS_FUNCTION_APP_NAME=dev-options\n"
+        "AZURE_DEV_DASHBOARD_APP_NAME=dev-dashboard\n"
+    )
+
+    monkeypatch.setattr(config_manager, "ENV_PATH", env_path)
+    targets = config_manager.resolve_broker_sync_targets()
+
+    assert targets["resource_group"] == "CRG"
+    assert targets["dashboard_resource_group"] == "CRG-staging"
+
+
+def test_read_env_includes_deployed_metadata_from_host_env(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text("")
+
+    monkeypatch.setattr(config_manager, "ENV_PATH", env_path)
+    monkeypatch.setenv("WEBSITE_SITE_NAME", "hosted-dashboard")
+    monkeypatch.setenv("DEPLOYED_GIT_BRANCH", "jeremy/split-stock-options-routing")
+    monkeypatch.setenv("DEPLOYED_GIT_SHA", "abc123")
+    monkeypatch.setenv("DEPLOYED_AT_UTC", "2026-05-30T02:00:00+00:00")
+
+    values = config_manager.read_env()
+
+    assert values["DEPLOYED_GIT_BRANCH"] == "jeremy/split-stock-options-routing"
+    assert values["DEPLOYED_GIT_SHA"] == "abc123"
+    assert values["DEPLOYED_AT_UTC"] == "2026-05-30T02:00:00+00:00"
+
+
+def test_resolve_broker_sync_targets_uses_prod_apps_for_prod_dashboard(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "ENVIRONMENT_NAME=prod\n"
+        "AZURE_RESOURCE_GROUP=CRG\n"
+        "AZURE_DEV_STOCK_FUNCTION_APP_NAME=dev-stock\n"
+        "AZURE_DEV_OPTIONS_FUNCTION_APP_NAME=dev-options\n"
+        "AZURE_DEV_DASHBOARD_APP_NAME=dev-dashboard\n"
+        "AZURE_PROD_STOCK_FUNCTION_APP_NAME=prod-stock\n"
+        "AZURE_PROD_OPTIONS_FUNCTION_APP_NAME=prod-options\n"
+        "AZURE_PROD_DASHBOARD_APP_NAME=prod-dashboard\n"
+    )
+
+    monkeypatch.setattr(config_manager, "ENV_PATH", env_path)
+    targets = config_manager.resolve_broker_sync_targets()
+
+    assert targets["environment"] == "prod"
+    assert targets["stock_function"] == "prod-stock"
+    assert targets["options_function"] == "prod-options"
+    assert targets["dashboard"] == "prod-dashboard"
+    assert "dev" not in " ".join(targets.values())

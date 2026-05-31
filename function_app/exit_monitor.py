@@ -11,13 +11,18 @@ JSON file on disk.
 """
 
 import os
-import fcntl
 import json
 import logging
+import sys
 from contextlib import contextmanager
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Optional
+
+if sys.platform == "win32":
+    import msvcrt
+else:
+    import fcntl
 
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import MarketOrderRequest, LimitOrderRequest
@@ -59,6 +64,21 @@ class ExitTarget:
 # ---------------------------------------------------------------------------
 
 _LOCK_FILE = _TARGETS_FILE.with_suffix(".lock")
+
+
+def _lock_file(lock_fh) -> None:
+    if sys.platform == "win32":
+        msvcrt.locking(lock_fh.fileno(), msvcrt.LK_LOCK, 1)
+        return
+    fcntl.flock(lock_fh, fcntl.LOCK_EX)
+
+
+def _unlock_file(lock_fh) -> None:
+    if sys.platform == "win32":
+        lock_fh.seek(0)
+        msvcrt.locking(lock_fh.fileno(), msvcrt.LK_UNLCK, 1)
+        return
+    fcntl.flock(lock_fh, fcntl.LOCK_UN)
 
 
 def _connection_string() -> str:
@@ -124,8 +144,8 @@ def _locked_targets():
             save(targets)
     """
     _LOCK_FILE.touch(exist_ok=True)
-    with open(_LOCK_FILE, "r") as lock_fh:
-        fcntl.flock(lock_fh, fcntl.LOCK_EX)
+    with open(_LOCK_FILE, "r+") as lock_fh:
+        _lock_file(lock_fh)
         try:
             # Load
             if _TARGETS_FILE.exists():
@@ -143,7 +163,7 @@ def _locked_targets():
 
             yield data, _save
         finally:
-            fcntl.flock(lock_fh, fcntl.LOCK_UN)
+            _unlock_file(lock_fh)
 
 
 def _load_targets() -> dict[str, dict]:

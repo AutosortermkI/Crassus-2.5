@@ -41,13 +41,14 @@ def _env_float(name: str, default: float = 0.0) -> float:
         return default
 
 
-def check_live_trading_gate(correlation_id: str = "") -> bool:
+def check_live_trading_gate(correlation_id: str = "", broker: str = "") -> bool:
     """Verify that live trading configuration is intentional.
 
     Rules:
       - If ``ALPACA_PAPER=true`` (default): always passes (paper mode is safe).
       - If ``ALPACA_PAPER=false`` (live): requires ``LIVE_TRADING_CONFIRMED=yes``.
-      - If ``ORDER_BROKER=tastytrade`` and ``TASTYTRADE_IS_TEST=false``:
+      - If the selected broker is Tastytrade and both
+        ``TASTYTRADE_IS_TEST=false`` and ``TASTYTRADE_DRY_RUN=false``:
         requires ``LIVE_TRADING_CONFIRMED=yes``.
 
     Returns:
@@ -57,27 +58,29 @@ def check_live_trading_gate(correlation_id: str = "") -> bool:
         LiveTradingNotConfirmedError: If live mode without confirmation.
     """
     broker = (
-        os.environ.get("ORDER_BROKER")
+        broker
+        or os.environ.get("ORDER_BROKER")
         or os.environ.get("BROKER")
         or "alpaca"
     ).strip().lower()
 
     if broker == "tastytrade":
         is_test = os.environ.get("TASTYTRADE_IS_TEST", "true").lower() == "true"
-        if is_test:
+        dry_run = os.environ.get("TASTYTRADE_DRY_RUN", "true").lower() == "true"
+        if is_test or dry_run:
             return True
 
         confirmed = os.environ.get("LIVE_TRADING_CONFIRMED", "").strip().lower()
         if confirmed != "yes":
             log_structured(
                 logger, logging.CRITICAL,
-                "LIVE TRADING BLOCKED: TASTYTRADE_IS_TEST=false but "
+                "LIVE TRADING BLOCKED: TASTYTRADE_IS_TEST=false and TASTYTRADE_DRY_RUN=false but "
                 "LIVE_TRADING_CONFIRMED is not set to 'yes'",
                 correlation_id,
             )
             raise LiveTradingNotConfirmedError(
-                "Tastytrade live trading is enabled (TASTYTRADE_IS_TEST=false) "
-                "but not confirmed. Set LIVE_TRADING_CONFIRMED=yes to "
+                "Tastytrade live trading is enabled (TASTYTRADE_IS_TEST=false and "
+                "TASTYTRADE_DRY_RUN=false) but not confirmed. Set LIVE_TRADING_CONFIRMED=yes to "
                 "acknowledge live trading."
             )
 

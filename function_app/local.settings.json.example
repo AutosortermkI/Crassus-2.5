@@ -2,8 +2,16 @@
   "IsEncrypted": false,
   "Values": {
     "FUNCTIONS_WORKER_RUNTIME": "python",
+    "AzureWebJobsFeatureFlags": "EnableWorkerIndexing",
     "AzureWebJobsStorage": "UseDevelopmentStorage=true",
-    "ORDER_BROKER": "tastytrade",
+    "ENVIRONMENT_NAME": "dev",
+    "STOCK_BROKER": "alpaca",
+    "OPTIONS_BROKER": "tastytrade",
+    "ORDER_BROKER": "",
+    "ENABLE_STOCK_TRADING": "true",
+    "ENABLE_OPTIONS_TRADING": "false",
+    "ENABLE_TASTYTRADE_OPTIONS": "false",
+    "OPTIONS_ALLOW_FALLBACK_TO_ALPACA": "false",
     "TASTYTRADE_ACCOUNT_NUMBER": "",
     "TASTYTRADE_CLIENT_SECRET": "",
     "TASTYTRADE_REFRESH_TOKEN": "",
@@ -13,6 +21,8 @@
     "ALPACA_API_KEY": "",
     "ALPACA_SECRET_KEY": "",
     "WEBHOOK_AUTH_TOKEN": "",
+    "STOCK_WEBHOOK_AUTH_TOKEN": "",
+    "OPTIONS_WEBHOOK_AUTH_TOKEN": "",
     "ALPACA_PAPER": "true"
   },
   "Host": {

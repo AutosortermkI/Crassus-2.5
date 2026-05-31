@@ -1,0 +1,193 @@
+# Azure Operations Log
+
+This file records deployment and resource-management decisions that matter for the live Crassus Azure estate. It intentionally omits secrets, account numbers, portfolio values, and broker credentials.
+
+## 2026-05-30 - Preserve Old Dashboard URLs On B1
+
+Branch: `jeremy/split-stock-options-routing`
+
+### Goal
+
+- Keep the exact existing dashboard hostnames:
+  - `https://crassus-25-dashboard.azurewebsites.net`
+  - `https://crassus-dev-dashboard.azurewebsites.net`
+- Move the existing dashboard capacity off the exhausted Free plan path.
+- Remove temporary staging resources that were created while debugging the quota/startup issue.
+- Keep active production/dev resources and the shared Key Vault/storage references intact.
+
+### Actions
+
+- Scaled the existing App Service plan `crassus-25-dashboard-plan` in resource group `CRG` to `B1`.
+- Kept both exact dashboard Web Apps on the existing `CRG` plan:
+  - `crassus-25-dashboard`
+  - `crassus-dev-dashboard`
+- Confirmed the exact dev dashboard was using app settings from the working B1 test app, including broker routing and Oryx build settings.
+- Repointed local ignored `.env` deploy overrides back to:
+  - `AZURE_DEV_DASHBOARD_APP_NAME=crassus-dev-dashboard`
+  - `AZURE_DEV_DASHBOARD_RESOURCE_GROUP=CRG`
+  - `AZURE_DEV_DASHBOARD_PLAN_RESOURCE_GROUP=CRG`
+  - `AZURE_DEV_DASHBOARD_PLAN_NAME=crassus-25-dashboard-plan`
+  - `AZURE_DEV_DASHBOARD_BASE_URL=https://crassus-dev-dashboard.azurewebsites.net`
+- Deleted staging resource group `CRG-staging-03121938`.
+
+### Removed With Staging Cleanup
+
+The deleted staging resource group contained temporary/debug resources only, including:
+
+- Temporary dashboard app `crassus-dev-dashboard-b1`
+- Staging dashboard app `crassus-25-dashboard-stg-03121938`
+- Staging Function App `crassus-25-stg-03121938`
+- Staging storage account `crassusstg03121938`
+- Staging Key Vault `crassusstg03121938kv`
+- Staging App Service plans in that resource group
+
+### Intentionally Kept
+
+These resources are active or referenced by the exact old URLs and should not be treated as abandoned:
+
+- Resource group `CRG`
+- Dashboard plan `crassus-25-dashboard-plan` on `B1`
+- Exact dashboard apps `crassus-25-dashboard` and `crassus-dev-dashboard`
+- Function Apps `crassus-25`, `crassus-dev-stock`, and `crassus-dev-options`
+- Storage account `crassusstorage25`
+- Key Vault `crassusstorage25kv`
+
+### Verification
+
+After the cleanup:
+
+- `https://crassus-25-dashboard.azurewebsites.net/` returned HTTP `200`.
+- `https://crassus-dev-dashboard.azurewebsites.net/` returned HTTP `200`.
+- Both dashboard `/api/credentials/check` endpoints returned `status=ok`, `broker=alpaca`, and `paper=true`.
+- Both dashboard `/api/portfolio` endpoints returned HTTP `200`.
+- `az group exists --name CRG-staging-03121938` returned `false`.
+
+### Notes
+
+- No Azure quota increase was required. The workaround was to keep the original hostnames and move their shared dashboard plan to `B1`.
+- Do not recreate the `CRG-staging-03121938` resources for normal dev deployment. Use the exact dev dashboard app in `CRG`.
+
+## 2026-05-30 - Restore Dev Dashboard Login
+
+Branch: `jeremy/split-stock-options-routing`
+
+### Goal
+
+- Restore the shared password gate on the dev dashboard at `https://crassus-dev-dashboard.azurewebsites.net`.
+- Keep the plaintext dashboard password out of Git and out of tracked documentation.
+
+### Actions
+
+- Confirmed the dashboard login code was already present and controlled by Azure App Settings:
+  - `DASHBOARD_ACCESS_PASSWORD`
+  - `DASHBOARD_ACCESS_PASSWORD_HASH`
+  - `DASHBOARD_SESSION_SECRET`
+- Set `DASHBOARD_ACCESS_PASSWORD_HASH` on Web App `crassus-dev-dashboard` in resource group `CRG`.
+- Set a stable `DASHBOARD_SESSION_SECRET` on the same Web App.
+- Left `DASHBOARD_ACCESS_PASSWORD` blank so the plaintext password is not stored as an App Setting.
+- Restarted `crassus-dev-dashboard`.
+
+### Verification
+
+After the restart:
+
+- Anonymous `GET /` returned HTTP `302` to `/login?next=/`.
+- Anonymous `GET /api/credentials/check` returned HTTP `401`.
+- `GET /login` rendered the dashboard password form.
+- Login with the configured password created a `crassus_dashboard_session` cookie.
+- Authenticated `GET /` returned HTTP `200`.
+- Authenticated `GET /api/credentials/check` returned `status=ok`, `broker=alpaca`, and `paper=true`.
+
+### Notes
+
+- The deployed password value is intentionally not recorded here.
+- The change is configuration-only for dev; no dashboard source-code change was required.
+
+## 2026-05-30 - Mirror Password Dashboard To Original Production URL
+
+Branch: `jeremy/split-stock-options-routing`
+
+### Goal
+
+- Temporarily mirror the dev dashboard password gate to the original production dashboard URL at `https://crassus-25-dashboard.azurewebsites.net`.
+- Keep the exact old production URL.
+- Do not use this as the normal forward deployment path; future production deployments should go through `main`.
+- Keep the plaintext dashboard password out of Git and out of tracked documentation.
+
+### Actions
+
+- Confirmed there is no separate `crassus-prod-dashboard` Web App in `CRG`; the original production dashboard Web App is `crassus-25-dashboard`.
+- Copied the dev dashboard password hash into `DASHBOARD_ACCESS_PASSWORD_HASH` on `crassus-25-dashboard`.
+- Left `DASHBOARD_ACCESS_PASSWORD` blank so the plaintext password is not stored as an App Setting.
+- Kept `DASHBOARD_SESSION_SECRET` on its existing Key Vault reference.
+- Attempted to store the hash in Key Vault first, but the current Azure identity did not have `secrets/setSecret` permission, so the hash was stored directly as an App Setting for this mirror.
+- Redeployed the known password-auth dashboard snapshot from commit `97fac0cfdb57a69dfd4bb6e0b15047df72dfa9c6`.
+- The first production redeploy was interrupted by an App Service/SCM restart and left `wwwroot` incomplete. A clean redeploy restored the package.
+- Refreshed deployed metadata:
+  - `DEPLOYED_GIT_BRANCH=jeremy/split-stock-options-routing`
+  - `DEPLOYED_GIT_SHA=97fac0cfdb57a69dfd4bb6e0b15047df72dfa9c6`
+
+### Verification
+
+After the clean redeploy and metadata refresh:
+
+- Anonymous `GET /` returned HTTP `302` to `/login?next=/`.
+- `GET /login` returned HTTP `200`.
+- Anonymous `GET /api/credentials/check` returned HTTP `401`.
+- Login with the configured password returned the dashboard.
+- Authenticated `GET /` returned HTTP `200`.
+- Authenticated `GET /api/credentials/check` returned `status=ok`, `broker=alpaca`, and `paper=true`.
+
+### Notes
+
+- The deployed password value and hash are intentionally not recorded here.
+- Azure CLI's startup tracker timed out on one clean redeploy attempt, but Kudu recorded the deployment as successful and the site passed the external HTTP/auth checks afterward.
+
+## 2026-05-31 - Deploy Split Stock And Options Webhook URLs
+
+Branch: `jeremy/split-stock-options-routing`
+
+### Goal
+
+- Replace the dashboard's legacy single TradingView webhook URL with separate stock/share and options URLs.
+- Deploy the same branch commit to dev and the original production URLs.
+- Keep production on the existing `crassus-25` Function App and `crassus-25-dashboard` dashboard URL.
+
+### Code Deployed
+
+- Commit `aa90700498cf2eb23ecb345c8f46c1e3297dd335`.
+- Added production defaults that map both split production routes to `https://crassus-25.azurewebsites.net`.
+- Updated `deploy_azure.sh` to support co-hosted stock/options routes in one Function App.
+- Fixed the dashboard test-webhook endpoint so it uses the stock split route instead of the removed single-route helper.
+
+### Azure Targets
+
+- Dev dashboard: `crassus-dev-dashboard`
+- Dev stock Function App: `crassus-dev-stock`
+- Dev options Function App: `crassus-dev-options`
+- Production dashboard: `crassus-25-dashboard`
+- Production Function App: `crassus-25`
+
+### Verification
+
+- Local `python -m pytest` equivalent through `.venv\Scripts\python.exe -m pytest` passed: `349 passed`.
+- Dev dashboard `/api/webhook/info` returned:
+  - Stock: `https://crassus-dev-stock.azurewebsites.net/api/trade-stock`
+  - Options: `https://crassus-dev-options.azurewebsites.net/api/trade-options`
+- Production dashboard `/api/webhook/info` returned:
+  - Stock: `https://crassus-25.azurewebsites.net/api/trade-stock`
+  - Options: `https://crassus-25.azurewebsites.net/api/trade-options`
+- Both dashboards still require login:
+  - Anonymous `GET /` returned HTTP `302` to `/login?next=/`.
+  - Anonymous `GET /api/webhook/info` returned HTTP `401`.
+- Both authenticated dashboard `/api/credentials/check` endpoints returned `status=ok`, `broker=alpaca`, and `paper=true`.
+- Unauthenticated route probes returned HTTP `401` for:
+  - `https://crassus-dev-stock.azurewebsites.net/api/trade-stock`
+  - `https://crassus-dev-options.azurewebsites.net/api/trade-options`
+  - `https://crassus-25.azurewebsites.net/api/trade-stock`
+  - `https://crassus-25.azurewebsites.net/api/trade-options`
+
+### Notes
+
+- The production dashboard deploy initially hung in Kudu with `dashboard_wsgi.py` missing from `wwwroot`; restarting the Web App and rerunning the same clean zip deploy restored the package.
+- No webhook tokens, dashboard passwords, or password hashes are recorded here.
