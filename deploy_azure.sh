@@ -339,9 +339,9 @@ upsert_env_var "TASTYTRADE_IS_TEST" "$TASTYTRADE_IS_TEST"
 upsert_env_var "TASTYTRADE_DRY_RUN" "$TASTYTRADE_DRY_RUN"
 
 if [ "$DEPLOY_ENV" = "prod" ]; then
-    STOCK_FUNCTION_APP_NAME="$(env_default "$(load_env_var "AZURE_PROD_STOCK_FUNCTION_APP_NAME")" "crassus-prod-stock")"
-    OPTIONS_FUNCTION_APP_NAME="$(env_default "$(load_env_var "AZURE_PROD_OPTIONS_FUNCTION_APP_NAME")" "crassus-prod-options")"
-    DASHBOARD_APP_NAME="$(env_default "$(load_env_var "AZURE_PROD_DASHBOARD_APP_NAME")" "crassus-prod-dashboard")"
+    STOCK_FUNCTION_APP_NAME="$(env_default "$(load_env_var "AZURE_PROD_STOCK_FUNCTION_APP_NAME")" "crassus-25")"
+    OPTIONS_FUNCTION_APP_NAME="$(env_default "$(load_env_var "AZURE_PROD_OPTIONS_FUNCTION_APP_NAME")" "crassus-25")"
+    DASHBOARD_APP_NAME="$(env_default "$(load_env_var "AZURE_PROD_DASHBOARD_APP_NAME")" "crassus-25-dashboard")"
     DASHBOARD_RESOURCE_GROUP="$(env_default "$(load_env_var "AZURE_PROD_DASHBOARD_RESOURCE_GROUP")" "$(env_default "$(load_env_var "AZURE_DASHBOARD_RESOURCE_GROUP")" "$RESOURCE_GROUP")")"
     DASHBOARD_PLAN_RESOURCE_GROUP="$(env_default "$(load_env_var "AZURE_PROD_DASHBOARD_PLAN_RESOURCE_GROUP")" "$(env_default "$(load_env_var "AZURE_DASHBOARD_PLAN_RESOURCE_GROUP")" "$DASHBOARD_RESOURCE_GROUP")")"
     DASHBOARD_PLAN_NAME="$(env_default "$(load_env_var "AZURE_PROD_DASHBOARD_PLAN_NAME")" "$(env_default "$(load_env_var "AZURE_DASHBOARD_PLAN_NAME")" "${DASHBOARD_APP_NAME}-plan")")"
@@ -396,8 +396,12 @@ else
         --output none
 fi
 
-ensure_function_app "$STOCK_FUNCTION_APP_NAME"
-ensure_function_app "$OPTIONS_FUNCTION_APP_NAME"
+if [ "$STOCK_FUNCTION_APP_NAME" = "$OPTIONS_FUNCTION_APP_NAME" ]; then
+    ensure_function_app "$STOCK_FUNCTION_APP_NAME"
+else
+    ensure_function_app "$STOCK_FUNCTION_APP_NAME"
+    ensure_function_app "$OPTIONS_FUNCTION_APP_NAME"
+fi
 ensure_dashboard_app
 ensure_dashboard_can_start
 
@@ -449,6 +453,12 @@ OPTIONS_FUNCTION_SETTINGS=(
     "${COMMON_FUNCTION_SETTINGS[@]}"
     "ACTIVE_TRADE_ENDPOINT=options"
     "ENABLE_STOCK_TRADING=false"
+    "ENABLE_OPTIONS_TRADING=true"
+)
+COMBINED_FUNCTION_SETTINGS=(
+    "${COMMON_FUNCTION_SETTINGS[@]}"
+    "ACTIVE_TRADE_ENDPOINT=both"
+    "ENABLE_STOCK_TRADING=true"
     "ENABLE_OPTIONS_TRADING=true"
 )
 
@@ -505,19 +515,28 @@ else
     )
 fi
 
-echo "Pushing stock Function App settings..."
-az functionapp config appsettings set \
-    --name "$STOCK_FUNCTION_APP_NAME" \
-    --resource-group "$RESOURCE_GROUP" \
-    --settings "${STOCK_FUNCTION_SETTINGS[@]}" \
-    --output none
+if [ "$STOCK_FUNCTION_APP_NAME" = "$OPTIONS_FUNCTION_APP_NAME" ]; then
+    echo "Pushing combined stock/options Function App settings..."
+    az functionapp config appsettings set \
+        --name "$STOCK_FUNCTION_APP_NAME" \
+        --resource-group "$RESOURCE_GROUP" \
+        --settings "${COMBINED_FUNCTION_SETTINGS[@]}" \
+        --output none
+else
+    echo "Pushing stock Function App settings..."
+    az functionapp config appsettings set \
+        --name "$STOCK_FUNCTION_APP_NAME" \
+        --resource-group "$RESOURCE_GROUP" \
+        --settings "${STOCK_FUNCTION_SETTINGS[@]}" \
+        --output none
 
-echo "Pushing options Function App settings..."
-az functionapp config appsettings set \
-    --name "$OPTIONS_FUNCTION_APP_NAME" \
-    --resource-group "$RESOURCE_GROUP" \
-    --settings "${OPTIONS_FUNCTION_SETTINGS[@]}" \
-    --output none
+    echo "Pushing options Function App settings..."
+    az functionapp config appsettings set \
+        --name "$OPTIONS_FUNCTION_APP_NAME" \
+        --resource-group "$RESOURCE_GROUP" \
+        --settings "${OPTIONS_FUNCTION_SETTINGS[@]}" \
+        --output none
+fi
 
 echo "Pushing dashboard Web App settings..."
 az webapp config appsettings set \
@@ -533,11 +552,16 @@ az webapp config set \
     --startup-file "$DASHBOARD_STARTUP_COMMAND" \
     --output none
 
-echo "Deploying function_app package to stock Function App..."
-(cd "$SCRIPT_DIR/function_app" && func azure functionapp publish "$STOCK_FUNCTION_APP_NAME" --python)
+if [ "$STOCK_FUNCTION_APP_NAME" = "$OPTIONS_FUNCTION_APP_NAME" ]; then
+    echo "Deploying function_app package to combined stock/options Function App..."
+    (cd "$SCRIPT_DIR/function_app" && func azure functionapp publish "$STOCK_FUNCTION_APP_NAME" --python)
+else
+    echo "Deploying function_app package to stock Function App..."
+    (cd "$SCRIPT_DIR/function_app" && func azure functionapp publish "$STOCK_FUNCTION_APP_NAME" --python)
 
-echo "Deploying function_app package to options Function App..."
-(cd "$SCRIPT_DIR/function_app" && func azure functionapp publish "$OPTIONS_FUNCTION_APP_NAME" --python)
+    echo "Deploying function_app package to options Function App..."
+    (cd "$SCRIPT_DIR/function_app" && func azure functionapp publish "$OPTIONS_FUNCTION_APP_NAME" --python)
+fi
 
 DASHBOARD_ZIP="$SCRIPT_DIR/.azure/dashboard-${DEPLOY_ENV}.zip"
 create_dashboard_package "$DASHBOARD_ZIP"

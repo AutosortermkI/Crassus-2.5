@@ -54,6 +54,11 @@ def test_unix_deploy_resolves_split_app_names_and_routes():
     assert "AZURE_PROD_STOCK_FUNCTION_APP_NAME" in script
     assert "AZURE_PROD_OPTIONS_FUNCTION_APP_NAME" in script
     assert "AZURE_PROD_DASHBOARD_APP_NAME" in script
+    assert 'env_default "$(load_env_var "AZURE_PROD_STOCK_FUNCTION_APP_NAME")" "crassus-25"' in script
+    assert 'env_default "$(load_env_var "AZURE_PROD_OPTIONS_FUNCTION_APP_NAME")" "crassus-25"' in script
+    assert 'env_default "$(load_env_var "AZURE_PROD_DASHBOARD_APP_NAME")" "crassus-25-dashboard"' in script
+    assert 'if [ "$STOCK_FUNCTION_APP_NAME" = "$OPTIONS_FUNCTION_APP_NAME" ]' in script
+    assert "ACTIVE_TRADE_ENDPOINT=both" in script
     assert "ENABLE_STOCK_TRADING=true" in script
     assert "ENABLE_OPTIONS_TRADING=true" in script
     assert "AzureWebJobsFeatureFlags=EnableWorkerIndexing" in script

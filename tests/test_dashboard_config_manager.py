@@ -84,6 +84,30 @@ def test_split_trade_urls_use_environment_specific_function_apps(tmp_path, monke
     assert "legacy-app" not in " ".join(urls.values())
 
 
+def test_prod_defaults_keep_original_function_app_url_with_split_routes(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text("ENVIRONMENT_NAME=prod\n")
+
+    monkeypatch.setattr(config_manager, "ENV_PATH", env_path)
+    monkeypatch.delenv("WEBSITE_SITE_NAME", raising=False)
+
+    urls = config_manager.get_azure_function_trade_urls()
+    activity_urls = config_manager.get_azure_function_activity_urls()
+    targets = config_manager.resolve_broker_sync_targets()
+
+    assert urls == {
+        "stock": "https://crassus-25.azurewebsites.net/api/trade-stock",
+        "options": "https://crassus-25.azurewebsites.net/api/trade-options",
+    }
+    assert activity_urls == {
+        "stock": "https://crassus-25.azurewebsites.net/api/webhook-activity",
+        "options": "https://crassus-25.azurewebsites.net/api/webhook-activity",
+    }
+    assert targets["stock_function"] == "crassus-25"
+    assert targets["options_function"] == "crassus-25"
+    assert targets["dashboard"] == "crassus-25-dashboard"
+
+
 def test_get_azure_settings_defaults_key_vault_name_from_storage_account(tmp_path, monkeypatch):
     env_path = tmp_path / ".env"
     env_path.write_text("AZURE_STORAGE_ACCOUNT=crassusstg03121938\n")

@@ -884,7 +884,7 @@ def api_webhook_test():
                 "Price: 189.50"
             )
         }
-        trade_url = _trade_endpoint_url()
+        trade_url = _select_route_url(_trade_endpoint_urls(), {"mode": "stock"})
         if trade_url == _dashboard_receive_url():
             event = _capture_webhook(test_payload, source="dashboard_test")
             return jsonify({
