@@ -28,6 +28,9 @@ dist/
 
 # Runtime state
 .options_targets.json
+.webhook_activity.json
+.paper_ledger.json
+.market_data.json
 .worktrees/
 
 # Test / coverage
