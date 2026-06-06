@@ -6,6 +6,11 @@ echo   Crassus 2.5 — Azure Deployment
 echo ====================================
 echo.
 
+if /I "%~1"=="--env" (
+    echo [ERROR] Split dev/prod deployment is currently supported by deploy_azure.sh. deploy_azure.bat needs parity updates before Windows deployment.
+    exit /b 1
+)
+
 REM ------------------------------------------------------------------
 REM Pre-flight
 REM ------------------------------------------------------------------

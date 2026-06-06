@@ -13,6 +13,7 @@
         <h1>Crassus <span>2.5</span></h1>
     </div>
     <div class="header-actions">
+        <span id="environmentBadge" class="badge badge-neutral">ENV</span>
         <span id="tradingBadge" class="badge badge-neutral">Webhook Ready</span>
         {% if dashboard_auth_enabled %}
         <form class="logout-form" method="post" action="/logout">
@@ -46,22 +47,38 @@
                         </h2>
                     </div>
                     <p class="card-description">
-                        Paste the webhook URL below into TradingView. Alerts are recorded and optionally forwarded to your Azure Function App for execution.
+                        Paste the matching stock/share or options webhook URL into TradingView. Alerts route to the split Azure Function Apps for execution.
                     </p>
 
                     <div class="field-row">
-                        <label>Webhook URL</label>
+                        <label>Stock / Shares Webhook URL</label>
                         <div class="value-row">
-                            <div id="webhookUrl" class="mono-box">Loading...</div>
-                            <button class="btn btn-secondary btn-icon" onclick="copyToClipboard('webhookUrl')" title="Copy">Copy</button>
+                            <div id="webhookStockUrl" class="mono-box">Loading...</div>
+                            <button class="btn btn-secondary btn-icon" onclick="copyToClipboard('webhookStockUrl')" title="Copy">Copy</button>
                         </div>
                     </div>
 
                     <div class="field-row">
-                        <label>Full URL (Token Included)</label>
+                        <label>Options Webhook URL</label>
                         <div class="value-row">
-                            <div id="webhookFullUrl" class="mono-box">Loading...</div>
-                            <button class="btn btn-secondary btn-icon" onclick="copyToClipboard('webhookFullUrl')" title="Copy">Copy</button>
+                            <div id="webhookOptionsUrl" class="mono-box">Loading...</div>
+                            <button class="btn btn-secondary btn-icon" onclick="copyToClipboard('webhookOptionsUrl')" title="Copy">Copy</button>
+                        </div>
+                    </div>
+
+                    <div class="field-row">
+                        <label>Stock / Shares Full URL (Token Included)</label>
+                        <div class="value-row">
+                            <div id="webhookStockFullUrl" class="mono-box">Loading...</div>
+                            <button class="btn btn-secondary btn-icon" onclick="copyToClipboard('webhookStockFullUrl')" title="Copy">Copy</button>
+                        </div>
+                    </div>
+
+                    <div class="field-row">
+                        <label>Options Full URL (Token Included)</label>
+                        <div class="value-row">
+                            <div id="webhookOptionsFullUrl" class="mono-box">Loading...</div>
+                            <button class="btn btn-secondary btn-icon" onclick="copyToClipboard('webhookOptionsFullUrl')" title="Copy">Copy</button>
                         </div>
                     </div>
 
@@ -258,6 +275,50 @@
          TAB 3: Settings
          ============================================================ -->
     <div id="panel-settings" class="tab-panel">
+
+        <div class="card">
+            <div class="card-header">
+                <h2>Broker Routing</h2>
+                <div class="actions">
+                    <button class="btn btn-primary" id="saveBrokerRoutingBtn" onclick="saveBrokerRouting()">Save Routing</button>
+                </div>
+            </div>
+            <p class="card-description" id="brokerRoutingEnvironment">
+                Loading environment...
+            </p>
+
+            <div class="grid-auto">
+                <div class="field-row">
+                    <label for="stockBrokerSelect">Stock / Share Broker</label>
+                    <select class="input" id="stockBrokerSelect">
+                        <option value="alpaca">alpaca</option>
+                        <option value="tastytrade">tastytrade</option>
+                    </select>
+                </div>
+                <div class="field-row">
+                    <label for="optionsBrokerSelect">Options Broker</label>
+                    <select class="input" id="optionsBrokerSelect">
+                        <option value="alpaca">alpaca</option>
+                        <option value="tastytrade">tastytrade</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="signal-grid" style="margin-top: 12px;">
+                <div class="signal-item">
+                    <div class="label">Deployed Branch</div>
+                    <div class="value" id="deployedBranch">-</div>
+                </div>
+                <div class="signal-item">
+                    <div class="label">Commit SHA</div>
+                    <div class="value" id="deployedSha">-</div>
+                </div>
+                <div class="signal-item">
+                    <div class="label">Last Deployed</div>
+                    <div class="value" id="deployedAt">-</div>
+                </div>
+            </div>
+        </div>
 
         <div class="card">
             <div class="card-header">

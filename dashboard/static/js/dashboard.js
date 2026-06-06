@@ -49,6 +49,7 @@
 
     let configData = {};
     let _pendingSave = false;
+    let brokerRouting = { stock_broker: 'alpaca', options_broker: 'tastytrade', environment_name: 'dev' };
 
     // ------------------------------------------------------------------
     // Utility: HTML-safe escaping (prevents XSS)
@@ -247,8 +248,10 @@
             .then(r => r.json())
             .then(data => {
                 if (data.status !== 'ok') throw new Error(data.message || 'Could not load webhook info');
-                document.getElementById('webhookUrl').textContent = data.local_url;
-                document.getElementById('webhookFullUrl').textContent = data.full_url;
+                document.getElementById('webhookStockUrl').textContent = data.stock_url || data.local_url || '';
+                document.getElementById('webhookOptionsUrl').textContent = data.options_url || data.local_url || '';
+                document.getElementById('webhookStockFullUrl').textContent = data.stock_full_url || data.full_url || '';
+                document.getElementById('webhookOptionsFullUrl').textContent = data.options_full_url || data.full_url || '';
                 document.getElementById('webhookToken').textContent = data.auth_token;
 
                 const target = document.getElementById('webhookForwardTarget');
@@ -259,7 +262,16 @@
                     pill.textContent = 'Store Only';
                     pill.className = 'status-pill status-warning';
                 } else {
-                    target.textContent = data.forward_target.toUpperCase() + ' \u2192 ' + data.forward_url;
+                    const forwardUrls = data.forward_urls || {};
+                    if (forwardUrls.stock || forwardUrls.options) {
+                        target.textContent = [
+                            data.forward_target.toUpperCase(),
+                            'Stock / Shares -> ' + (forwardUrls.stock || data.forward_url || ''),
+                            'Options -> ' + (forwardUrls.options || data.forward_url || ''),
+                        ].join('\n');
+                    } else {
+                        target.textContent = data.forward_target.toUpperCase() + ' -> ' + data.forward_url;
+                    }
                     pill.textContent = 'Forwarding: ' + data.forward_target;
                     pill.className = 'status-pill status-success';
                 }
@@ -717,6 +729,17 @@
                                  onkeydown="if(event.key===' '||event.key==='Enter'){event.preventDefault();window._toggleConfigBool(this)}"></div>
                         </div>
                     </div>`;
+                } else if (param.type === 'select' && ['STOCK_BROKER', 'OPTIONS_BROKER'].includes(param.key)) {
+                    html += `<div class="config-row" data-config-label="${esc(param.label.toLowerCase())} ${esc(param.description.toLowerCase())}">
+                        <div class="config-label">
+                            ${esc(param.label)}
+                            <div class="desc">${esc(param.description)}</div>
+                        </div>
+                        <select class="input config-input" data-key="${esc(param.key)}" aria-label="${esc(param.label)}">
+                            <option value="alpaca" ${param.value === 'alpaca' ? 'selected' : ''}>alpaca</option>
+                            <option value="tastytrade" ${param.value === 'tastytrade' ? 'selected' : ''}>tastytrade</option>
+                        </select>
+                    </div>`;
                 } else {
                     html += `<div class="config-row" data-config-label="${esc(param.label.toLowerCase())} ${esc(param.description.toLowerCase())}">
                         <div class="config-label">
@@ -733,6 +756,74 @@
         }
 
         document.getElementById('configEditor').innerHTML = html;
+    }
+
+    function renderBrokerRouting(data) {
+        brokerRouting = data;
+        const env = String(data.environment_name || 'dev').toLowerCase() === 'prod' ? 'prod' : 'dev';
+        const envBadge = document.getElementById('environmentBadge');
+        envBadge.textContent = env.toUpperCase();
+        envBadge.className = 'badge ' + (env === 'prod' ? 'badge-live' : 'badge-paper');
+
+        document.getElementById('stockBrokerSelect').value = data.stock_broker || 'alpaca';
+        document.getElementById('optionsBrokerSelect').value = data.options_broker || 'tastytrade';
+        document.getElementById('deployedBranch').textContent = data.deployed_git_branch || '-';
+        document.getElementById('deployedSha').textContent = data.deployed_git_sha || '-';
+        document.getElementById('deployedAt').textContent = data.deployed_at_utc || '-';
+        document.getElementById('brokerRoutingEnvironment').textContent = env === 'prod'
+            ? 'PROD changes affect production Azure apps only and require confirmation.'
+            : 'DEV changes affect shared dev Azure apps only.';
+    }
+
+    function loadBrokerRouting() {
+        fetch('/api/config/brokers')
+            .then(r => r.json())
+            .then(data => {
+                if (data.status !== 'ok') throw new Error(data.message || 'Could not load broker routing');
+                renderBrokerRouting(data);
+            })
+            .catch(err => showToast(err.message, 'error'));
+    }
+
+    async function saveBrokerRouting() {
+        const stockBroker = document.getElementById('stockBrokerSelect').value;
+        const optionsBroker = document.getElementById('optionsBrokerSelect').value;
+        const env = String(brokerRouting.environment_name || 'dev').toLowerCase() === 'prod' ? 'prod' : 'dev';
+        const body = [
+            'Previous stock broker: ' + (brokerRouting.stock_broker || 'alpaca'),
+            'New stock broker: ' + stockBroker,
+            'Previous options broker: ' + (brokerRouting.options_broker || 'tastytrade'),
+            'New options broker: ' + optionsBroker,
+            'This changes where future webhook orders are routed. It does not enable live trading by itself.'
+        ].join('\n');
+        const confirmed = await confirmAction(
+            'Confirm broker routing change',
+            env === 'prod' ? 'PROD environment.\n' + body : body
+        );
+        if (!confirmed) return;
+
+        const btn = document.getElementById('saveBrokerRoutingBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner"></span> Saving...';
+
+        fetch('/api/config/brokers', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ stock_broker: stockBroker, options_broker: optionsBroker }),
+        })
+        .then(r => r.json().then(data => ({ ok: r.ok, data })))
+        .then(({ ok, data }) => {
+            if (!ok || data.status !== 'ok') throw new Error(data.message || 'Could not save broker routing');
+            showToast('Broker routing saved', 'success');
+            loadBrokerRouting();
+            loadConfig();
+            loadBrokerStatus();
+        })
+        .catch(err => showToast(err.message, 'error'))
+        .finally(() => {
+            btn.disabled = false;
+            btn.textContent = 'Save Routing';
+        });
     }
 
     // Exposed to onclick handlers
@@ -828,6 +919,7 @@
         loadPositions();
         loadOrders();
         loadConfig();
+        loadBrokerRouting();
 
         // Polling intervals
         setInterval(loadWebhookActivity, 5000);
@@ -848,6 +940,7 @@
     window.clearWebhooks = clearWebhooks;
     window.submitCredentials = submitCredentials;
     window.saveConfig = saveConfig;
+    window.saveBrokerRouting = saveBrokerRouting;
 
     // Boot
     if (document.readyState === 'loading') {

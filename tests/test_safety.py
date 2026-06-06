@@ -64,7 +64,7 @@ class TestLiveTradingSafetyGate:
         with pytest.raises(LiveTradingNotConfirmedError, match="Tastytrade live trading"):
             check_live_trading_gate("test-123")
 
-    def test_tastytrade_production_dry_run_passes_without_live_confirmation(self, monkeypatch):
+    def test_tastytrade_prod_dry_run_passes_without_live_confirmation(self, monkeypatch):
         monkeypatch.setenv("ORDER_BROKER", "tastytrade")
         monkeypatch.setenv("TASTYTRADE_IS_TEST", "false")
         monkeypatch.setenv("TASTYTRADE_DRY_RUN", "true")
