@@ -51,6 +51,10 @@
     let _pendingSave = false;
     let selectedTemplateKey = 'stockBuy';
     let brokerRouting = { stock_broker: 'alpaca', options_broker: 'tastytrade', environment_name: 'dev' };
+    const sampleMarketData = {
+        stock: { ticker: 'F', close: '14.90' },
+        options: { ticker: 'AAPL', close: '189.50' }
+    };
 
     // ------------------------------------------------------------------
     // Utility: HTML-safe escaping (prevents XSS)
@@ -244,10 +248,11 @@
 
     function sampleWebhookPayload(key) {
         const template = templateMap[key] || templateMap.stockBuy;
+        const sample = key.startsWith('stock') ? sampleMarketData.stock : sampleMarketData.options;
         return JSON.parse(
             template
-                .replaceAll('{{ticker}}', 'AAPL')
-                .replaceAll('{{close}}', '189.50')
+                .replaceAll('{{ticker}}', sample.ticker)
+                .replaceAll('{{close}}', sample.close)
                 .replaceAll('{{volume}}', '2500000')
                 .replaceAll('{{timenow}}', new Date().toISOString())
         );
