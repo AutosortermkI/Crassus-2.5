@@ -56,7 +56,7 @@ class TastytradeConfig:
     @classmethod
     def from_env(cls) -> "TastytradeConfig":
         """Load Tastytrade settings from environment variables."""
-        is_test = _env_bool("TASTYTRADE_IS_TEST", True)
+        is_test = _env_bool("TASTYTRADE_IS_TEST", False)
         base_url = os.environ.get("TASTYTRADE_BASE_URL", "").strip() or None
         timeout = _env_float("TASTYTRADE_TIMEOUT_SECONDS", 15.0)
         config = cls(

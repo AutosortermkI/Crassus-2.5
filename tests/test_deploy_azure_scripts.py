@@ -9,6 +9,8 @@ def test_unix_deploy_allows_dashboard_first_tastytrade_setup():
 
     assert 'touch "$ENV_FILE"' in script
     assert "Tastytrade credentials are not set locally" in script
+    assert "TASTYTRADE_IS_TEST=${TASTYTRADE_IS_TEST:-false}" in script
+    assert "TASTYTRADE_DRY_RUN=${TASTYTRADE_DRY_RUN:-true}" in script
     assert 'upsert_env_var "TASTYTRADE_IS_TEST" "$TASTYTRADE_IS_TEST"' in script
     assert 'upsert_env_var "TASTYTRADE_DRY_RUN" "$TASTYTRADE_DRY_RUN"' in script
     assert (
@@ -22,6 +24,8 @@ def test_windows_deploy_allows_dashboard_first_tastytrade_setup():
 
     assert 'type nul > "%ENV_FILE%"' in script
     assert "Tastytrade credentials are not set locally" in script
+    assert "if not defined TASTYTRADE_IS_TEST set TASTYTRADE_IS_TEST=false" in script
+    assert "if not defined TASTYTRADE_DRY_RUN set TASTYTRADE_DRY_RUN=true" in script
     assert "call :upsert_env_var TASTYTRADE_IS_TEST !TASTYTRADE_IS_TEST!" in script
     assert "call :upsert_env_var TASTYTRADE_DRY_RUN !TASTYTRADE_DRY_RUN!" in script
     assert (

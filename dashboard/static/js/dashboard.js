@@ -202,6 +202,35 @@
             toggle.classList.contains('active') ? 'ON' : 'OFF';
     }
 
+    function setSetupToggleState(toggleId, labelId, active) {
+        const toggle = document.getElementById(toggleId);
+        const label = document.getElementById(labelId);
+        if (!toggle || !label) return;
+        toggle.classList.toggle('active', active);
+        toggle.setAttribute('aria-checked', active ? 'true' : 'false');
+        label.textContent = active ? 'ON' : 'OFF';
+    }
+
+    function configBool(config, key, fallback) {
+        const entry = config && config[key];
+        const value = entry ? entry.value : null;
+        if (value === null || value === undefined || value === '') return fallback;
+        return String(value).toLowerCase() === 'true';
+    }
+
+    function applyTastytradeSetupDefaults(config) {
+        setSetupToggleState(
+            'setupTestToggle',
+            'setupTestLabel',
+            configBool(config, 'TASTYTRADE_IS_TEST', false)
+        );
+        setSetupToggleState(
+            'setupDryRunToggle',
+            'setupDryRunLabel',
+            configBool(config, 'TASTYTRADE_DRY_RUN', true)
+        );
+    }
+
     // ------------------------------------------------------------------
     // Template tab switcher
     // ------------------------------------------------------------------
@@ -658,6 +687,7 @@
             .then(data => {
                 if (data.status !== 'ok') throw new Error(data.message || 'Could not load config');
                 configData = data.config;
+                applyTastytradeSetupDefaults(configData);
                 renderConfig(configData);
             })
             .catch(err => {

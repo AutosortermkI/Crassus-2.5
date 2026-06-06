@@ -34,7 +34,7 @@ def verify_credentials() -> dict:
         return {
             "ok": True,
             "account_id": env.get("TASTYTRADE_ACCOUNT_NUMBER", ""),
-            "paper": _env_bool(env, "TASTYTRADE_IS_TEST", True),
+            "paper": _env_bool(env, "TASTYTRADE_IS_TEST", False),
             "dry_run": _env_bool(env, "TASTYTRADE_DRY_RUN", True),
         }
     except Exception as e:
@@ -46,7 +46,7 @@ def verify_credentials_with_values(
     account_number: str,
     client_secret: str,
     refresh_token: str,
-    is_test: bool = True,
+    is_test: bool = False,
 ) -> dict:
     """Verify submitted Tastytrade credentials without requiring saved app settings."""
     try:
@@ -86,7 +86,7 @@ def get_account_summary() -> dict:
         "portfolio_value": round(equity, 2),
         "profit_loss": round(_float_value(balance, "realized-day-gain", default=0.0), 2),
         "profit_loss_pct": 0.0,
-        "paper": _env_bool(env, "TASTYTRADE_IS_TEST", True),
+        "paper": _env_bool(env, "TASTYTRADE_IS_TEST", False),
         "dry_run": _env_bool(env, "TASTYTRADE_DRY_RUN", True),
     }
 
@@ -134,7 +134,7 @@ def _get_client() -> TastytradeClient:
         account_number=(env.get("TASTYTRADE_ACCOUNT_NUMBER") or "").strip(),
         client_secret=(env.get("TASTYTRADE_CLIENT_SECRET") or "").strip(),
         refresh_token=(env.get("TASTYTRADE_REFRESH_TOKEN") or "").strip(),
-        is_test=_env_bool(env, "TASTYTRADE_IS_TEST", True),
+        is_test=_env_bool(env, "TASTYTRADE_IS_TEST", False),
         base_url=(env.get("TASTYTRADE_BASE_URL") or "").strip() or None,
         oauth_scopes=(env.get("TASTYTRADE_OAUTH_SCOPES") or "read trade").strip(),
     )

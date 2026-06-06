@@ -196,8 +196,8 @@ PARAM_DEFINITIONS = OrderedDict([
         "label": "Tastytrade Cert/Sandbox",
         "group": "Broker: Tastytrade",
         "type": "bool",
-        "default": "true",
-        "description": "true = cert/test API, false = production Tastytrade API",
+        "default": "false",
+        "description": "true = cert/test API for sandbox grants, false = production API for normal tastytrade OAuth grants",
     }),
     ("TASTYTRADE_DRY_RUN", {
         "label": "Tastytrade Dry Run",
@@ -1060,6 +1060,35 @@ def sync_broker_settings_to_azure(updates: dict) -> dict:
     }
 
 
+def _sync_settings_to_resolved_targets(updates: dict) -> dict:
+    """Sync app settings to this environment's split Function Apps and dashboard."""
+    targets = resolve_broker_sync_targets()
+    resource_group = targets["resource_group"]
+    failures = []
+    synced_functions = set()
+
+    for app_name in (targets["stock_function"], targets["options_function"]):
+        if not app_name or app_name in synced_functions:
+            continue
+        synced_functions.add(app_name)
+        status = _sync_one_app_setting("function", app_name, resource_group, updates)
+        if status == "error":
+            failures.append(f"Function App {app_name}")
+
+    dashboard_status = _sync_one_app_setting(
+        "webapp",
+        targets["dashboard"],
+        targets["dashboard_resource_group"],
+        updates,
+    )
+    if dashboard_status == "error":
+        failures.append(f"Dashboard App {targets['dashboard']}")
+
+    if failures:
+        return {"ok": False, "error": "Azure sync failed for " + ", ".join(failures)}
+    return {"ok": True}
+
+
 def get_azure_function_trade_url(env: Optional[dict] = None) -> str:
     """Return the stock Azure trade endpoint URL for legacy callers."""
     return get_azure_function_trade_urls(env)["stock"]
@@ -1361,11 +1390,11 @@ def _sync_settings_with_cli(settings: dict, updates: dict) -> dict:
 
 
 def sync_settings_to_azure(updates: dict) -> dict:
-    """Push config key=value pairs to the Azure Function App.
+    """Push config key=value pairs to the current split Azure apps.
 
-    Uses ``az functionapp config appsettings set`` for the trade backend and,
-    when configured, ``az webapp config appsettings set`` for the hosted
-    dashboard so shared Azure settings stay aligned.
+    Syncs to the current environment's stock Function App, options Function App,
+    and hosted dashboard so dashboard-entered credentials and webhook tokens
+    reach the same apps that receive split TradingView traffic.
 
     Returns ``{"ok": True}`` on success or ``{"ok": False, "error": ...}``
     on failure.
@@ -1381,15 +1410,4 @@ def sync_settings_to_azure(updates: dict) -> dict:
         if not secret_result["ok"]:
             return secret_result
 
-    management_result = _sync_settings_with_management_api(azure_settings, app_updates)
-    if management_result["ok"]:
-        return management_result
-
-    cli_result = _sync_settings_with_cli(azure_settings, app_updates)
-    if cli_result["ok"]:
-        return cli_result
-
-    return {
-        "ok": False,
-        "error": f"{management_result['error']}; {cli_result['error']}",
-    }
+    return _sync_settings_to_resolved_targets(app_updates)

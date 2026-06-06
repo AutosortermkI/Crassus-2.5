@@ -65,7 +65,7 @@ def check_live_trading_gate(correlation_id: str = "", broker: str = "") -> bool:
     ).strip().lower()
 
     if broker == "tastytrade":
-        is_test = os.environ.get("TASTYTRADE_IS_TEST", "true").lower() == "true"
+        is_test = os.environ.get("TASTYTRADE_IS_TEST", "false").lower() == "true"
         dry_run = os.environ.get("TASTYTRADE_DRY_RUN", "true").lower() == "true"
         if is_test or dry_run:
             return True
