@@ -520,7 +520,8 @@ body {
     gap: 12px;
 }
 
-.broker-control-card {
+.broker-control-card,
+.broker-snapshot-card {
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius);

@@ -41,3 +41,23 @@ def test_dashboard_js_loads_combined_broker_status():
     assert "fetch('/api/broker/status')" in js
     assert "renderBrokerStatus(data)" in js
     assert "brokerModeLabels" in js
+
+
+def test_portfolio_tab_has_combined_dashboard_sections():
+    html = (ROOT_DIR / "dashboard" / "templates" / "index.html").read_text()
+
+    assert "Crassus Paper Account" in html
+    assert "Broker Snapshots" in html
+    assert "Market Data" in html
+    assert 'id="paperAccountGrid"' in html
+    assert 'id="brokerSnapshotsGrid"' in html
+    assert 'id="marketDataGrid"' in html
+    assert 'id="paperLedgerEvents"' in html
+
+
+def test_dashboard_js_loads_combined_dashboard_api():
+    js = (ROOT_DIR / "dashboard" / "static" / "js" / "dashboard.js").read_text()
+
+    assert "fetch('/api/dashboard/combined')" in js
+    assert "renderCombinedDashboard(data)" in js
+    assert "paperAccountGrid" in js

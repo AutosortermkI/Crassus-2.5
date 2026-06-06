@@ -49,6 +49,8 @@ from tastytrade_client import (
 )
 from webhook_store import build_signature, clear_events, get_activity_snapshot, record_event
 from parser import ParseError, parse_webhook_payload
+from paper_ledger import get_ledger_events as get_local_ledger_events
+from paper_ledger import get_paper_account as get_local_paper_account
 
 app = Flask(__name__)
 app.secret_key = ensure_dashboard_session_secret()
@@ -228,6 +230,140 @@ def _activity_endpoint_urls() -> dict:
         root, _, _ = urls["default"].partition("/api/")
         return {"custom": f"{root}/api/webhook-activity"}
     return {}
+
+
+def _function_route_urls(route: str) -> dict:
+    urls = {}
+    for source, activity_url in _activity_endpoint_urls().items():
+        if "/api/" not in activity_url:
+            continue
+        root, _, _ = activity_url.partition("/api/")
+        candidate = f"{root}/api/{route.lstrip('/')}"
+        if candidate not in urls.values():
+            urls[source] = candidate
+    return urls
+
+
+def _fetch_function_json(url: str, token: str, params: Optional[dict] = None) -> dict:
+    request_params = dict(params or {})
+    request_params["token"] = token
+    response = http_requests.get(url, params=request_params, timeout=10)
+    if response.headers.get("content-type", "").startswith("application/json"):
+        body = response.json()
+    else:
+        body = {"error": response.text}
+    if response.status_code >= 400:
+        raise RuntimeError(body.get("error") or f"{url} returned HTTP {response.status_code}")
+    return body
+
+
+def _fetch_paper_account() -> dict:
+    urls = _function_route_urls("paper-ledger/account")
+    if not urls:
+        return get_local_paper_account()
+
+    token = ensure_webhook_token()
+    failures = []
+    for source, url in urls.items():
+        try:
+            body = _fetch_function_json(url, token)
+            account = body.get("account") or {}
+            account.setdefault("source_app", source)
+            return account
+        except Exception as e:
+            failures.append(f"{source}: {e}")
+    return {
+        "source": "crassus_paper_ledger",
+        "status": "unavailable",
+        "open_positions": [],
+        "message": "; ".join(failures) or "Paper ledger endpoint unavailable.",
+    }
+
+
+def _fetch_paper_events(limit: int = 20) -> list[dict]:
+    urls = _function_route_urls("paper-ledger/events")
+    if not urls:
+        return get_local_ledger_events(limit=limit)
+
+    token = ensure_webhook_token()
+    events_by_id = {}
+    failures = []
+    for source, url in urls.items():
+        try:
+            body = _fetch_function_json(url, token, params={"limit": limit})
+            for event in body.get("events") or []:
+                event_id = event.get("event_id") or f"{source}:{len(events_by_id)}"
+                item = dict(event)
+                item.setdefault("source_app", source)
+                events_by_id[event_id] = item
+        except Exception as e:
+            failures.append(f"{source}: {e}")
+    events = sorted(
+        events_by_id.values(),
+        key=lambda event: _activity_time(event.get("recorded_at")),
+        reverse=True,
+    )
+    if events:
+        return events[:limit]
+    if failures:
+        return [{
+            "event_id": "paper-ledger-unavailable",
+            "event_type": "ledger_unavailable",
+            "recorded_at": _utcnow_iso(),
+            "message": "; ".join(failures),
+        }]
+    return []
+
+
+def _tastytrade_snapshot() -> dict:
+    if not tt_has_credentials():
+        return {
+            "status": "missing",
+            "broker": "tastytrade",
+            "message": "Tastytrade credentials are not configured.",
+        }
+    try:
+        return {
+            "status": "ok",
+            "broker": "tastytrade",
+            "portfolio": tt_get_account_summary(),
+            "positions": tt_get_positions(),
+            "orders": tt_get_recent_orders(limit=20),
+            "refreshed_at": _utcnow_iso(),
+        }
+    except Exception as e:
+        return {"status": "error", "broker": "tastytrade", "message": str(e)}
+
+
+def _alpaca_snapshot() -> dict:
+    if not has_credentials():
+        return {
+            "status": "missing",
+            "broker": "alpaca",
+            "message": "Alpaca credentials are not configured.",
+        }
+    try:
+        return {
+            "status": "ok",
+            "broker": "alpaca",
+            "portfolio": get_account_summary(),
+            "positions": get_positions(),
+            "orders": get_recent_orders(limit=20),
+            "refreshed_at": _utcnow_iso(),
+        }
+    except Exception as e:
+        return {"status": "error", "broker": "alpaca", "message": str(e)}
+
+
+def _market_data_summary() -> dict:
+    return {
+        "status": "not_configured",
+        "source": "tastytrade_dxlink",
+        "connected": False,
+        "stale": True,
+        "subscribed_symbols": [],
+        "message": "Tastytrade DXLink market-data worker is not deployed yet.",
+    }
 
 
 def _broker_role(broker: str, stock_broker: str, options_broker: str, configured: bool) -> str:
@@ -812,6 +948,47 @@ def api_broker_status():
             "tastytrade": _tastytrade_status(env, stock_broker, options_broker),
             "alpaca": _alpaca_status(env, stock_broker, options_broker),
             "safety": safety,
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/api/paper-ledger/account", methods=["GET"])
+def api_paper_ledger_account():
+    """Return materialized Crassus paper account state."""
+    try:
+        return jsonify({"status": "ok", "account": _fetch_paper_account()})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/api/paper-ledger/events", methods=["GET"])
+def api_paper_ledger_events():
+    """Return recent Crassus paper ledger events."""
+    try:
+        try:
+            limit = int(request.args.get("limit", "20"))
+        except ValueError:
+            limit = 20
+        return jsonify({"status": "ok", "events": _fetch_paper_events(limit=max(1, limit))})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/api/dashboard/combined", methods=["GET"])
+def api_dashboard_combined():
+    """Return Crassus paper, external broker, and market-data dashboard state."""
+    try:
+        return jsonify({
+            "status": "ok",
+            "paper_account": _fetch_paper_account(),
+            "paper_events": _fetch_paper_events(limit=20),
+            "broker_snapshots": {
+                "tastytrade": _tastytrade_snapshot(),
+                "alpaca": _alpaca_snapshot(),
+            },
+            "market_data": _market_data_summary(),
+            "refreshed_at": _utcnow_iso(),
         })
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500

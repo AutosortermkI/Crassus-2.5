@@ -90,3 +90,48 @@ def test_broker_status_separates_tastytrade_alpaca_routing_and_safety(tmp_path, 
     assert "super-secret" not in json.dumps(body)
     assert "refresh-secret" not in json.dumps(body)
     module.verify_credentials.assert_not_called()
+
+
+def test_dashboard_combined_returns_paper_broker_and_market_sections(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text("ENVIRONMENT_NAME=prod\n")
+    monkeypatch.setattr(config_manager, "ENV_PATH", env_path)
+    monkeypatch.delenv("WEBSITE_SITE_NAME", raising=False)
+
+    module = _load_app_module("dashboard_app_combined_status_test")
+    monkeypatch.setattr(module, "_fetch_paper_account", MagicMock(return_value={
+        "source": "crassus_paper_ledger",
+        "cash": 25000.0,
+        "open_positions": [],
+    }), raising=False)
+    monkeypatch.setattr(module, "_fetch_paper_events", MagicMock(return_value=[
+        {"event_id": "event-1", "event_type": "signal_received"},
+    ]), raising=False)
+    monkeypatch.setattr(module, "_tastytrade_snapshot", MagicMock(return_value={
+        "status": "ok",
+        "broker": "tastytrade",
+        "portfolio": {"cash": 1000.0},
+        "positions": [],
+        "orders": [],
+    }), raising=False)
+    monkeypatch.setattr(module, "_alpaca_snapshot", MagicMock(return_value={
+        "status": "missing",
+        "broker": "alpaca",
+        "message": "Alpaca credentials are not configured.",
+    }), raising=False)
+    monkeypatch.setattr(module, "_market_data_summary", MagicMock(return_value={
+        "status": "not_configured",
+        "source": "tastytrade_dxlink",
+        "stale": True,
+    }), raising=False)
+
+    response = module.app.test_client().get("/api/dashboard/combined")
+    body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["status"] == "ok"
+    assert body["paper_account"]["source"] == "crassus_paper_ledger"
+    assert body["paper_events"][0]["event_id"] == "event-1"
+    assert body["broker_snapshots"]["tastytrade"]["status"] == "ok"
+    assert body["broker_snapshots"]["alpaca"]["status"] == "missing"
+    assert body["market_data"]["source"] == "tastytrade_dxlink"

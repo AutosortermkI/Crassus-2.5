@@ -658,6 +658,99 @@
     }
 
     // ------------------------------------------------------------------
+    // API: Combined Dashboard
+    // ------------------------------------------------------------------
+    function renderPaperLedgerEvents(events) {
+        const container = document.getElementById('paperLedgerEvents');
+        if (!events || !events.length) {
+            container.innerHTML = '<div class="empty-state">No paper ledger events yet.</div>';
+            return;
+        }
+        let html = '<div class="table-wrap"><table><thead><tr>' +
+            '<th>Recorded</th><th>Event</th><th>Ticker</th><th>Broker</th><th>Status</th>' +
+            '</tr></thead><tbody>';
+        for (const event of events) {
+            const parsed = event.parsed || {};
+            const execution = event.execution || {};
+            html += `<tr>
+                <td>${esc(formatDate(event.recorded_at))}</td>
+                <td><strong>${esc(event.event_type || '-')}</strong></td>
+                <td>${esc(parsed.ticker || '-')}</td>
+                <td>${esc(event.broker || (execution.body || {}).broker || '-')}</td>
+                <td>${esc((execution.body || {}).status || execution.message || '-')}</td>
+            </tr>`;
+        }
+        html += '</tbody></table></div>';
+        container.innerHTML = html;
+    }
+
+    function renderBrokerSnapshotCard(title, snapshot) {
+        const status = snapshot.status || 'missing';
+        const portfolio = snapshot.portfolio || {};
+        const positions = snapshot.positions || [];
+        const orders = snapshot.orders || [];
+        return `<div class="broker-snapshot-card">
+            <div class="broker-card-title">${esc(title)}</div>
+            ${statusPill(status, status)}
+            ${detailRows([
+                ['Message', snapshot.message || (status === 'ok' ? 'Snapshot loaded.' : 'Unavailable')],
+                ['Equity', portfolio.equity != null ? fmtDollar(portfolio.equity) : '-'],
+                ['Cash', portfolio.cash != null ? fmtDollar(portfolio.cash) : '-'],
+                ['Positions', positions.length],
+                ['Recent Orders', orders.length],
+                ['Refreshed', snapshot.refreshed_at ? formatDate(snapshot.refreshed_at) : '-'],
+            ])}
+        </div>`;
+    }
+
+    function renderCombinedDashboard(data) {
+        const account = data.paper_account || {};
+        const positions = account.open_positions || [];
+        document.getElementById('paperAccountGrid').innerHTML = `
+            <div class="stat-box"><div class="label">Total Equity</div><div class="value">${fmtDollar(account.total_equity)}</div></div>
+            <div class="stat-box"><div class="label">Cash</div><div class="value">${fmtDollar(account.cash)}</div></div>
+            <div class="stat-box"><div class="label">Realized P&amp;L</div><div class="value ${plClass(account.realized_pl)}">${fmtDollar(account.realized_pl)}</div></div>
+            <div class="stat-box"><div class="label">Unrealized P&amp;L</div><div class="value ${plClass(account.unrealized_pl)}">${fmtDollar(account.unrealized_pl)}</div></div>
+            <div class="stat-box"><div class="label">Open Positions</div><div class="value">${esc(positions.length)}</div></div>
+            <div class="stat-box"><div class="label">Fill Policy</div><div class="value">${esc(account.paper_fill_policy || '-')}</div></div>
+        `;
+        renderPaperLedgerEvents(data.paper_events || []);
+
+        const snapshots = data.broker_snapshots || {};
+        document.getElementById('brokerSnapshotsGrid').innerHTML = [
+            renderBrokerSnapshotCard('Tastytrade', snapshots.tastytrade || {}),
+            renderBrokerSnapshotCard('Alpaca', snapshots.alpaca || {}),
+        ].join('');
+
+        const market = data.market_data || {};
+        document.getElementById('marketDataGrid').innerHTML = `
+            <div class="stat-box"><div class="label">Source</div><div class="value">${esc(market.source || 'tastytrade_dxlink')}</div></div>
+            <div class="stat-box"><div class="label">Status</div><div class="value">${esc(market.status || 'unknown')}</div></div>
+            <div class="stat-box"><div class="label">Connected</div><div class="value">${market.connected ? 'YES' : 'NO'}</div></div>
+            <div class="stat-box"><div class="label">Stale</div><div class="value">${market.stale ? 'YES' : 'NO'}</div></div>
+            <div class="stat-box"><div class="label">Subscriptions</div><div class="value">${esc((market.subscribed_symbols || []).length)}</div></div>
+            <div class="stat-box"><div class="label">Message</div><div class="value">${esc(market.message || '-')}</div></div>
+        `;
+    }
+
+    function loadCombinedDashboard() {
+        fetch('/api/dashboard/combined')
+            .then(r => r.json())
+            .then(data => {
+                if (data.status !== 'ok') throw new Error(data.message || 'Could not load combined dashboard');
+                renderCombinedDashboard(data);
+            })
+            .catch(err => {
+                document.getElementById('paperAccountGrid').innerHTML =
+                    '<div class="empty-state">' + esc(err.message) + '</div>';
+                document.getElementById('brokerSnapshotsGrid').innerHTML =
+                    '<div class="empty-state">' + esc(err.message) + '</div>';
+                document.getElementById('marketDataGrid').innerHTML =
+                    '<div class="empty-state">' + esc(err.message) + '</div>';
+            });
+    }
+
+    // ------------------------------------------------------------------
     // API: Save Credentials
     // ------------------------------------------------------------------
     function submitCredentials() {
@@ -693,9 +786,7 @@
             if (data.status !== 'ok') throw new Error(data.message || 'Could not save credentials');
             showToast('Tastytrade credentials saved and verified', 'success');
             loadBrokerStatus();
-            loadPortfolio();
-            loadPositions();
-            loadOrders();
+            loadCombinedDashboard();
         })
         .catch(err => showToast(err.message, 'error'))
         .finally(() => {
@@ -946,6 +1037,7 @@
             loadBrokerRouting();
             loadConfig();
             loadBrokerStatus();
+            loadCombinedDashboard();
         })
         .catch(err => showToast(err.message, 'error'))
         .finally(() => {
@@ -1012,6 +1104,7 @@
             loadWebhookInfo();
             loadWebhookActivity();
             loadBrokerStatus();
+            loadCombinedDashboard();
         })
         .catch(err => showToast(err.message, 'error'))
         .finally(() => {
@@ -1043,19 +1136,13 @@
         loadWebhookInfo();
         loadWebhookActivity();
         loadBrokerStatus();
-        loadPortfolio();
-        loadPositions();
-        loadOrders();
+        loadCombinedDashboard();
         loadConfig();
         loadBrokerRouting();
 
         // Polling intervals
         setInterval(loadWebhookActivity, 5000);
-        setInterval(() => {
-            loadPortfolio();
-            loadPositions();
-            loadOrders();
-        }, 30000);
+        setInterval(loadCombinedDashboard, 30000);
     }
 
     // Expose functions needed by onclick handlers in HTML

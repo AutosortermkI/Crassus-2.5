@@ -278,28 +278,41 @@
 
         <div class="card">
             <div class="card-header">
-                <h2>Account Summary</h2>
+                <h2>Crassus Paper Account</h2>
             </div>
-            <div id="portfolioGrid" class="grid-auto">
-                <div class="empty-state">Connect Tastytrade credentials to view portfolio data.</div>
+            <p class="card-description">
+                Durable Crassus paper state persists independently from Tastytrade sandbox resets. By default, dry-run broker validations do not create paper fills.
+            </p>
+            <div id="paperAccountGrid" class="grid-auto">
+                <div class="empty-state">Paper ledger state is loading.</div>
             </div>
-        </div>
-
-        <div class="card">
-            <div class="card-header">
-                <h2>Open Positions</h2>
-            </div>
-            <div id="positionsTable">
-                <div class="empty-state">No broker connection.</div>
+            <div class="section-label" style="margin-top: 16px;">Recent Paper Ledger Events</div>
+            <div id="paperLedgerEvents">
+                <div class="empty-state">No paper ledger events yet.</div>
             </div>
         </div>
 
         <div class="card">
             <div class="card-header">
-                <h2>Recent Orders</h2>
+                <h2>Broker Snapshots</h2>
             </div>
-            <div id="ordersTable">
-                <div class="empty-state">No broker connection.</div>
+            <p class="card-description">
+                External broker balances, positions, and orders are snapshots only. They are shown separately from the Crassus paper ledger.
+            </p>
+            <div id="brokerSnapshotsGrid" class="grid-2">
+                <div class="empty-state">Broker snapshots are loading.</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h2>Market Data</h2>
+            </div>
+            <p class="card-description">
+                Tastytrade market data status and quote staleness will appear here once the DXLink worker is deployed.
+            </p>
+            <div id="marketDataGrid" class="grid-auto">
+                <div class="empty-state">Market data worker is not configured yet.</div>
             </div>
         </div>
 
