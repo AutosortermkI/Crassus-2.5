@@ -143,6 +143,12 @@ def _parse_timestamp(value: Any) -> Optional[datetime]:
 def _derive_status(event: Dict[str, Any]) -> str:
     forward = event.get("forward") or {}
     if event.get("parse_error"):
+        parsed = event.get("parsed")
+        message = str(event.get("parse_error") or forward.get("message") or "").strip().lower()
+        if parsed and (message == "duplicate signal" or forward.get("status_code") == 409):
+            return "duplicate_signal"
+        if parsed and forward.get("status_code"):
+            return f"http_{forward['status_code']}"
         return "parse_error"
     if not forward:
         return "stored"

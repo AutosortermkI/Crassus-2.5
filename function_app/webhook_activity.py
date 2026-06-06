@@ -178,6 +178,13 @@ def _parse_time(value: Any) -> Optional[datetime]:
 
 def _last_status(event: Dict[str, Any]) -> str:
     if event.get("parse_error"):
+        execution = event.get("execution") or {}
+        parsed = event.get("parsed")
+        message = str(event.get("parse_error") or execution.get("message") or "").strip().lower()
+        if parsed and (message == "duplicate signal" or execution.get("status_code") == 409):
+            return "duplicate_signal"
+        if parsed and execution.get("status_code"):
+            return f"http_{execution['status_code']}"
         return "parse_error"
     execution = event.get("execution") or {}
     if execution.get("ok"):
