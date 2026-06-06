@@ -56,6 +56,25 @@ def test_get_azure_settings_exposes_dashboard_hosting_fields(tmp_path, monkeypat
     assert settings["dashboard_sku"] == "P1V3"
 
 
+def test_get_config_exposes_paper_ledger_settings(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "PAPER_FILL_MODE=preflight_only\n"
+        "PAPER_STARTING_CASH=25000\n"
+        "PAPER_LEDGER_CONTAINER=paper-ledger\n"
+    )
+
+    monkeypatch.setattr(config_manager, "ENV_PATH", env_path)
+    monkeypatch.delenv("WEBSITE_SITE_NAME", raising=False)
+
+    config = config_manager.get_config()
+
+    assert config["PAPER_FILL_MODE"]["value"] == "preflight_only"
+    assert config["PAPER_FILL_MODE"]["group"] == "Paper Ledger"
+    assert config["PAPER_STARTING_CASH"]["value"] == "25000"
+    assert config["PAPER_LEDGER_CONTAINER"]["value"] == "paper-ledger"
+
+
 def test_split_trade_urls_use_environment_specific_function_apps(tmp_path, monkeypatch):
     env_path = tmp_path / ".env"
     env_path.write_text(

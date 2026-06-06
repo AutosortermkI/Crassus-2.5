@@ -85,6 +85,7 @@ from webhook_activity import (
     get_webhook_activity_snapshot,
     record_webhook_event,
 )
+from paper_ledger import get_ledger_events, get_paper_account, record_trade_lifecycle
 
 logger = get_logger(__name__)
 
@@ -176,6 +177,15 @@ def _authenticate_request(req: func.HttpRequest, correlation_id: str, expected_m
     expected_token = os.environ.get(token_key, "").strip() or os.environ.get("WEBHOOK_AUTH_TOKEN", "").strip()
     if not token or not expected_token or not hmac.compare_digest(token, expected_token):
         log_structured(logger, logging.WARNING, "Unauthorized request", correlation_id)
+        return _json_response({"error": "Unauthorized", "correlation_id": correlation_id}, 401)
+    return None
+
+
+def _authenticate_read_request(req: func.HttpRequest, correlation_id: str) -> Optional[func.HttpResponse]:
+    token = req.headers.get("X-Webhook-Token", "") or req.params.get("token", "")
+    expected_token = os.environ.get("WEBHOOK_AUTH_TOKEN", "").strip()
+    if not token or not expected_token or not hmac.compare_digest(token, expected_token):
+        log_structured(logger, logging.WARNING, "Unauthorized read request", correlation_id)
         return _json_response({"error": "Unauthorized", "correlation_id": correlation_id}, 401)
     return None
 
@@ -360,6 +370,38 @@ def webhook_activity(req: func.HttpRequest) -> func.HttpResponse:
     )
     snapshot["correlation_id"] = correlation_id
     return _json_response(snapshot, 200)
+
+
+@app.route(route="paper-ledger/events", methods=["GET"])
+def paper_ledger_events(req: func.HttpRequest) -> func.HttpResponse:
+    """Return recent Crassus paper-ledger events."""
+    correlation_id = generate_correlation_id()
+    token_response = _authenticate_read_request(req, correlation_id)
+    if token_response is not None:
+        return token_response
+
+    try:
+        limit = int(req.params.get("limit", "50"))
+    except ValueError:
+        limit = 50
+    return _json_response({
+        "events": get_ledger_events(limit=max(1, limit)),
+        "correlation_id": correlation_id,
+    }, 200)
+
+
+@app.route(route="paper-ledger/account", methods=["GET"])
+def paper_ledger_account(req: func.HttpRequest) -> func.HttpResponse:
+    """Return materialized Crassus paper account state."""
+    correlation_id = generate_correlation_id()
+    token_response = _authenticate_read_request(req, correlation_id)
+    if token_response is not None:
+        return token_response
+
+    return _json_response({
+        "account": get_paper_account(),
+        "correlation_id": correlation_id,
+    }, 200)
 
 
 # ======================================================================
@@ -952,6 +994,15 @@ def _record_activity(
         },
         "signature": build_signature(parsed),
     }
+    try:
+        record_trade_lifecycle(
+            payload=payload,
+            parsed=parsed,
+            execution=event["execution"],
+            correlation_id=correlation_id,
+        )
+    except Exception as e:
+        log_structured(logger, logging.ERROR, f"Paper ledger write failed: {e}", correlation_id)
     record_webhook_event(event)
     log_structured(logger, logging.INFO, "Webhook activity recorded", correlation_id)
     return None

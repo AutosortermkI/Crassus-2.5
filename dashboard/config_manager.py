@@ -241,6 +241,27 @@ PARAM_DEFINITIONS = OrderedDict([
         "default": "Stop Limit",
         "description": "Tastytrade exit stop type: Stop or Stop Limit",
     }),
+    ("PAPER_FILL_MODE", {
+        "label": "Paper Fill Mode",
+        "group": "Paper Ledger",
+        "type": "text",
+        "default": "preflight_only",
+        "description": "Crassus paper fill policy. preflight_only records broker validation without assuming fills.",
+    }),
+    ("PAPER_STARTING_CASH", {
+        "label": "Paper Starting Cash",
+        "group": "Paper Ledger",
+        "type": "float",
+        "default": "0",
+        "description": "Starting cash for the Crassus-owned paper ledger. Set explicitly to avoid implying broker sandbox continuity.",
+    }),
+    ("PAPER_LEDGER_CONTAINER", {
+        "label": "Paper Ledger Blob Container",
+        "group": "Paper Ledger",
+        "type": "text",
+        "default": "paper-ledger",
+        "description": "Azure Blob container for append-only paper-ledger events.",
+    }),
     ("AZURE_FUNCTION_APP_NAME", {
         "label": "Function App Name",
         "group": "Azure Deployment",

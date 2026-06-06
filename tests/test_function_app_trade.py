@@ -292,6 +292,93 @@ def test_tastytrade_stock_dry_run_skips_live_buying_power_gate(monkeypatch):
     submit_tastytrade.assert_called_once()
 
 
+def test_tastytrade_stock_dry_run_records_paper_ledger_lifecycle(monkeypatch):
+    monkeypatch.setenv("ORDER_BROKER", "tastytrade")
+    monkeypatch.setenv("TASTYTRADE_DRY_RUN", "true")
+    monkeypatch.setenv("DEFAULT_STOCK_QTY", "2")
+    function_module = _reload_function_module(monkeypatch)
+
+    fake_client = SimpleNamespace()
+    ledger_calls = []
+    monkeypatch.setattr(function_module, "get_tastytrade_client", MagicMock(return_value=fake_client))
+    monkeypatch.setattr(function_module, "validate_tastytrade_position_limit", MagicMock(return_value=0))
+    monkeypatch.setattr(function_module, "get_tastytrade_account_equity", MagicMock(return_value=50000.0))
+    monkeypatch.setattr(function_module, "validate_tastytrade_buying_power", MagicMock(return_value=25000.0))
+    monkeypatch.setattr(function_module, "submit_tastytrade_stock_order", MagicMock(return_value="tt-dry-run-ledger"))
+    monkeypatch.setattr(function_module, "check_tastytrade_trading_safety", MagicMock(return_value=True))
+    monkeypatch.setattr(function_module, "is_duplicate_signal", lambda **kwargs: False)
+    monkeypatch.setattr(function_module, "record_webhook_event", lambda event: None)
+    monkeypatch.setattr(
+        function_module,
+        "record_trade_lifecycle",
+        lambda **kwargs: ledger_calls.append(kwargs) or [],
+    )
+
+    req = _make_request(
+        "**New Buy Signal:**\n"
+        "AAPL 5 Min Candle\n"
+        "Strategy: bollinger_mean_reversion\n"
+        "Mode: stock\n"
+        "Price: 100.00"
+    )
+
+    resp = function_module.trade(req)
+
+    assert resp.status_code == 200
+    assert len(ledger_calls) == 1
+    call = ledger_calls[0]
+    assert call["correlation_id"]
+    assert call["parsed"] == {
+        "ticker": "AAPL",
+        "side": "buy",
+        "strategy": "bollinger_mean_reversion",
+        "price": 100.0,
+        "mode": "stock",
+        "volume": None,
+        "time": None,
+    }
+    assert call["execution"]["ok"] is True
+    assert call["execution"]["status_code"] == 200
+    assert call["execution"]["body"]["broker"] == "tastytrade"
+    assert call["execution"]["body"]["dry_run"] is True
+
+
+def test_paper_ledger_routes_return_events_and_account(monkeypatch):
+    function_module = _reload_function_module(monkeypatch)
+    monkeypatch.setattr(function_module, "get_ledger_events", MagicMock(return_value=[
+        {"event_id": "event-1", "event_type": "signal_received"},
+    ]))
+    monkeypatch.setattr(function_module, "get_paper_account", MagicMock(return_value={
+        "source": "crassus_paper_ledger",
+        "cash": 25000.0,
+        "open_positions": [],
+    }))
+
+    events_req = func.HttpRequest(
+        method="GET",
+        url="http://localhost/api/paper-ledger/events",
+        headers={"X-Webhook-Token": "token"},
+        params={"limit": "5"},
+        body=b"",
+    )
+    account_req = func.HttpRequest(
+        method="GET",
+        url="http://localhost/api/paper-ledger/account",
+        headers={"X-Webhook-Token": "token"},
+        params={},
+        body=b"",
+    )
+
+    events_resp = function_module.paper_ledger_events(events_req)
+    account_resp = function_module.paper_ledger_account(account_req)
+
+    assert events_resp.status_code == 200
+    assert json.loads(events_resp.get_body())["events"][0]["event_id"] == "event-1"
+    assert account_resp.status_code == 200
+    assert json.loads(account_resp.get_body())["account"]["source"] == "crassus_paper_ledger"
+    function_module.get_ledger_events.assert_called_once_with(limit=5)
+
+
 def test_tastytrade_stock_live_mode_enforces_buying_power_gate(monkeypatch):
     monkeypatch.setenv("ORDER_BROKER", "tastytrade")
     monkeypatch.setenv("TASTYTRADE_DRY_RUN", "false")
