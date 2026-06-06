@@ -124,3 +124,40 @@ def test_credentials_save_verifies_submitted_tastytrade_values_before_azure_sync
         is_test=True,
     )
     legacy_verify.assert_not_called()
+
+
+def test_credentials_save_failure_names_tastytrade_api_mode(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text("ORDER_BROKER=tastytrade\n")
+    monkeypatch.setattr(config_manager, "ENV_PATH", env_path)
+    monkeypatch.delenv("WEBSITE_SITE_NAME", raising=False)
+
+    module = _load_app_module("dashboard_app_tastytrade_failure_message_test")
+    monkeypatch.setattr(
+        module,
+        "tt_verify_credentials_with_values",
+        MagicMock(return_value={"ok": False, "error": "invalid_grant"}),
+    )
+    monkeypatch.setattr(module, "save_tastytrade_credentials", MagicMock())
+    monkeypatch.setattr(module, "sync_settings_to_azure", MagicMock())
+
+    response = module.app.test_client().post(
+        "/api/credentials/save",
+        json={
+            "broker": "tastytrade",
+            "account_number": "5WT12345",
+            "client_secret": "client-secret",
+            "refresh_token": "refresh-token",
+            "is_test": False,
+            "dry_run": True,
+        },
+    )
+    body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["status"] == "invalid"
+    assert "production" in body["message"].lower()
+    assert "invalid_grant" in body["message"]
+    assert "saved" not in body["message"].lower()
+    module.save_tastytrade_credentials.assert_not_called()
+    module.sync_settings_to_azure.assert_not_called()

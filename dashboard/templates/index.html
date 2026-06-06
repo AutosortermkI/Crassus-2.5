@@ -178,12 +178,13 @@
                     <div class="field-row">
                         <label>Cert/Sandbox API</label>
                         <div class="toggle-wrap">
-                            <span id="setupTestLabel">ON</span>
-                            <div id="setupTestToggle" class="toggle active"
-                                 role="switch" aria-checked="true" aria-label="Cert/Sandbox API"
+                            <span id="setupTestLabel">OFF</span>
+                            <div id="setupTestToggle" class="toggle"
+                                 role="switch" aria-checked="false" aria-label="Cert/Sandbox API"
                                  tabindex="0" onclick="toggleTastytradeTestMode()"
                                  onkeydown="if(event.key===' '||event.key==='Enter'){event.preventDefault();toggleTastytradeTestMode()}"></div>
                         </div>
+                        <div class="field-help">Leave OFF for normal tastytrade OAuth app credentials. Turn ON only for cert/sandbox grants.</div>
                     </div>
 
                     <div class="field-row">

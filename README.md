@@ -595,13 +595,13 @@ All variables are configurable via the dashboard UI or directly in `.env`.
 | `TASTYTRADE_REFRESH_TOKEN` | Tastytrade OAuth refresh token; can be entered in the hosted dashboard after deployment and stored in Key Vault |
 | `WEBHOOK_AUTH_TOKEN` | Shared secret (via `X-Webhook-Token` header or `?token=` query param) |
 
-The Azure deployment itself does not require Tastytrade credentials in local `.env`. If they are missing, deployment continues with `ORDER_BROKER=tastytrade`, `TASTYTRADE_IS_TEST=true`, and `TASTYTRADE_DRY_RUN=true`; the hosted dashboard will show broker credentials as missing until you enter them there.
+The Azure deployment itself does not require Tastytrade credentials in local `.env`. If they are missing, deployment continues with `ORDER_BROKER=tastytrade`, `TASTYTRADE_IS_TEST=false`, and `TASTYTRADE_DRY_RUN=true`; the hosted dashboard will show broker credentials as missing until you enter them there.
 
 ### Optional (with defaults)
 
 | Variable | Default | Description |
 |---|---|---|
-| `TASTYTRADE_IS_TEST` | `true` | `true` = Tastytrade cert/test API, `false` = production API |
+| `TASTYTRADE_IS_TEST` | `false` | `true` = Tastytrade cert/test API for sandbox grants, `false` = production API for normal tastytrade OAuth grants |
 | `TASTYTRADE_DRY_RUN` | `true` | Validate stock OTOCO payloads with Tastytrade dry-run endpoints without routing orders |
 | `TASTYTRADE_ENTRY_TIME_IN_FORCE` | `Day` | Time-in-force for the opening OTOCO order |
 | `TASTYTRADE_EXIT_TIME_IN_FORCE` | `GTC` | Time-in-force for take-profit and stop exit orders |

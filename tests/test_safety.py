@@ -58,10 +58,19 @@ class TestLiveTradingSafetyGate:
     def test_tastytrade_live_mode_requires_confirmation(self, monkeypatch):
         monkeypatch.setenv("ORDER_BROKER", "tastytrade")
         monkeypatch.setenv("TASTYTRADE_IS_TEST", "false")
+        monkeypatch.setenv("TASTYTRADE_DRY_RUN", "false")
         monkeypatch.delenv("LIVE_TRADING_CONFIRMED", raising=False)
 
         with pytest.raises(LiveTradingNotConfirmedError, match="Tastytrade live trading"):
             check_live_trading_gate("test-123")
+
+    def test_tastytrade_production_dry_run_passes_without_live_confirmation(self, monkeypatch):
+        monkeypatch.setenv("ORDER_BROKER", "tastytrade")
+        monkeypatch.setenv("TASTYTRADE_IS_TEST", "false")
+        monkeypatch.setenv("TASTYTRADE_DRY_RUN", "true")
+        monkeypatch.delenv("LIVE_TRADING_CONFIRMED", raising=False)
+
+        assert check_live_trading_gate("test-123") is True
 
 
 class TestIsPaperMode:

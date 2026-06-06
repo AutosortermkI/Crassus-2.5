@@ -47,8 +47,8 @@ def check_live_trading_gate(correlation_id: str = "") -> bool:
     Rules:
       - If ``ALPACA_PAPER=true`` (default): always passes (paper mode is safe).
       - If ``ALPACA_PAPER=false`` (live): requires ``LIVE_TRADING_CONFIRMED=yes``.
-      - If ``ORDER_BROKER=tastytrade`` and ``TASTYTRADE_IS_TEST=false``:
-        requires ``LIVE_TRADING_CONFIRMED=yes``.
+      - If ``ORDER_BROKER=tastytrade`` and ``TASTYTRADE_IS_TEST=false`` with
+        ``TASTYTRADE_DRY_RUN=false``: requires ``LIVE_TRADING_CONFIRMED=yes``.
 
     Returns:
         True if paper mode, or live mode with confirmation.
@@ -63,8 +63,9 @@ def check_live_trading_gate(correlation_id: str = "") -> bool:
     ).strip().lower()
 
     if broker == "tastytrade":
-        is_test = os.environ.get("TASTYTRADE_IS_TEST", "true").lower() == "true"
-        if is_test:
+        is_test = os.environ.get("TASTYTRADE_IS_TEST", "false").lower() == "true"
+        dry_run = os.environ.get("TASTYTRADE_DRY_RUN", "true").lower() == "true"
+        if is_test or dry_run:
             return True
 
         confirmed = os.environ.get("LIVE_TRADING_CONFIRMED", "").strip().lower()

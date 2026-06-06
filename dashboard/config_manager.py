@@ -120,8 +120,8 @@ PARAM_DEFINITIONS = OrderedDict([
         "label": "Tastytrade Cert/Sandbox",
         "group": "Broker: Tastytrade",
         "type": "bool",
-        "default": "true",
-        "description": "true = cert/test API, false = production Tastytrade API",
+        "default": "false",
+        "description": "true = cert/test API for sandbox grants, false = production API for normal tastytrade OAuth grants",
     }),
     ("TASTYTRADE_DRY_RUN", {
         "label": "Tastytrade Dry Run",

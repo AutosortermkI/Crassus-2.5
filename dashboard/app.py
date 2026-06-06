@@ -427,10 +427,20 @@ def api_credentials_save():
                     "paper": result["paper"],
                     "dry_run": result.get("dry_run", dry_run),
                 })
+            api_mode = "cert/sandbox" if is_test else "production"
+            hint = (
+                " If these credentials came from your normal tastytrade OAuth app, "
+                "turn Cert/Sandbox API OFF and try again."
+                if is_test else
+                " If these credentials came from a sandbox/cert account, turn Cert/Sandbox API ON."
+            )
             return jsonify({
                 "status": "invalid",
                 "broker": "tastytrade",
-                "message": "Saved, but authentication failed: " + result["error"],
+                "message": (
+                    f"Tastytrade {api_mode} verification failed before saving: "
+                    f"{result['error']}.{hint}"
+                ),
             })
 
         api_key = (data.get("api_key") or "").strip()
