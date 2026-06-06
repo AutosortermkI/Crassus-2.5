@@ -19,7 +19,7 @@ import os
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 import azure.functions as func
 from alpaca.trading.client import TradingClient
@@ -266,10 +266,7 @@ def _handle_trade_request(
         _record_activity(data, correlation_id, response, signal=signal, parse_error=str(e))
         return response
     except TastytradeAPIError as e:
-        response = _json_response(
-            {"error": f"Tastytrade API error: {str(e)}", "broker": "tastytrade", "correlation_id": correlation_id},
-            502,
-        )
+        response = _json_response(_tastytrade_api_error_body(e, correlation_id), 502)
         _record_activity(data, correlation_id, response, signal=signal, parse_error=str(e))
         return response
 
@@ -328,10 +325,7 @@ def _handle_trade_request(
         _record_activity(data, correlation_id, response, signal=signal, parse_error=str(e))
         return response
     except TastytradeAPIError as e:
-        response = _json_response(
-            {"error": f"Tastytrade API error: {str(e)}", "broker": "tastytrade", "correlation_id": correlation_id},
-            502,
-        )
+        response = _json_response(_tastytrade_api_error_body(e, correlation_id), 502)
         _record_activity(data, correlation_id, response, signal=signal, parse_error=str(e))
         return response
     except Exception as e:
@@ -847,6 +841,74 @@ def _env_float(name: str, default: float = 0.0) -> float:
         return float(raw)
     except ValueError:
         return default
+
+
+def _tastytrade_api_error_body(error: TastytradeAPIError, correlation_id: str) -> dict:
+    """Return a safe HTTP body for broker API failures."""
+    body = {
+        "error": f"Tastytrade API error: {str(error)}",
+        "broker": "tastytrade",
+        "correlation_id": correlation_id,
+    }
+    if error.status_code is not None:
+        body["broker_status_code"] = error.status_code
+
+    details = _extract_tastytrade_error_details(error.response_body)
+    if details:
+        body["broker_error_details"] = details
+    return body
+
+
+def _extract_tastytrade_error_details(source: Any) -> list[str]:
+    """Extract text/code details from nested Tastytrade error responses."""
+    detail_keys = {
+        "code",
+        "description",
+        "detail",
+        "error",
+        "error_description",
+        "message",
+        "reason",
+    }
+    container_keys = {
+        "data",
+        "error",
+        "errors",
+        "items",
+        "preflight-errors",
+        "preflight_errors",
+        "warnings",
+    }
+    details: list[str] = []
+    seen: set[str] = set()
+
+    def add(value: Any) -> None:
+        text = str(value).strip()
+        if text and text not in seen:
+            seen.add(text)
+            details.append(text)
+
+    def visit(value: Any, key_name: str = "") -> None:
+        if len(details) >= 12:
+            return
+        if isinstance(value, dict):
+            for key, child in value.items():
+                normalized = str(key).strip().lower()
+                if normalized in detail_keys and isinstance(child, (str, int, float, bool)):
+                    add(child)
+                if normalized in container_keys or isinstance(child, (dict, list)):
+                    visit(child, normalized)
+            return
+        if isinstance(value, list):
+            for item in value:
+                visit(item, key_name)
+            return
+        if key_name in detail_keys and value not in (None, ""):
+            add(value)
+
+    visit(source)
+    return details
+
 
 def _json_response(body: dict, status_code: int) -> func.HttpResponse:
     """Return an ``HttpResponse`` with JSON content type."""

@@ -417,6 +417,46 @@ def test_trade_stock_route_rejects_explicit_options_signal(monkeypatch):
     assert "options" in body["error"].lower()
 
 
+def test_trade_stock_tastytrade_api_error_includes_broker_detail(monkeypatch):
+    function_module = _reload_function_module(monkeypatch)
+    monkeypatch.setattr(function_module, "is_duplicate_signal", lambda **kwargs: False)
+    monkeypatch.setattr(function_module, "_run_common_preflight", MagicMock())
+    monkeypatch.setattr(function_module, "_route_stock_order", MagicMock(side_effect=function_module.TastytradeAPIError(
+        "One or more preflight checks failed",
+        status_code=422,
+        response_body={
+            "error": {
+                "message": "One or more preflight checks failed",
+                "errors": [
+                    {
+                        "code": "preflight_check_failed",
+                        "message": "Buying power is insufficient for this order",
+                    }
+                ],
+            }
+        },
+    )))
+    monkeypatch.setattr(function_module, "record_webhook_event", lambda event: None)
+
+    req = _make_request(
+        "**New Buy Signal:**\n"
+        "AAPL 5 Min Candle\n"
+        "Strategy: bollinger_mean_reversion\n"
+        "Mode: stock\n"
+        "Price: 189.50",
+        token="stock-token",
+        route="trade-stock",
+    )
+
+    resp = function_module.trade_stock(req)
+    body = json.loads(resp.get_body())
+
+    assert resp.status_code == 502
+    assert body["broker"] == "tastytrade"
+    assert body["broker_status_code"] == 422
+    assert "Buying power is insufficient for this order" in body["broker_error_details"]
+
+
 def test_trade_options_route_rejects_explicit_stock_signal(monkeypatch):
     function_module = _reload_function_module(monkeypatch)
     monkeypatch.setattr(function_module, "record_webhook_event", lambda event: None)
