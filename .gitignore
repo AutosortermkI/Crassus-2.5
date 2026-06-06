@@ -28,6 +28,7 @@ dist/
 
 # Runtime state
 .options_targets.json
+.worktrees/
 
 # Test / coverage
 .pytest_cache/
