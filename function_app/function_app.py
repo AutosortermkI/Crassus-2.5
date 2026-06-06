@@ -585,11 +585,21 @@ def _handle_tastytrade_stock_order(signal, strategy_config, correlation_id: str)
         account_equity=equity,
     )
 
+    dry_run = tastytrade_dry_run_enabled()
     required_dollars = qty * signal.price
-    try:
-        validate_tastytrade_buying_power(client, required_dollars, correlation_id)
-    except InsufficientBuyingPowerError as e:
-        return _json_response({"error": str(e), "broker": "tastytrade", "correlation_id": correlation_id}, 422)
+    if dry_run:
+        log_structured(
+            logger,
+            logging.INFO,
+            "Skipping Tastytrade live buying power check in dry-run mode",
+            correlation_id,
+            required=required_dollars,
+        )
+    else:
+        try:
+            validate_tastytrade_buying_power(client, required_dollars, correlation_id)
+        except InsufficientBuyingPowerError as e:
+            return _json_response({"error": str(e), "broker": "tastytrade", "correlation_id": correlation_id}, 422)
 
     params = TastytradeBracketParams(
         symbol=signal.ticker,
@@ -606,13 +616,13 @@ def _handle_tastytrade_stock_order(signal, strategy_config, correlation_id: str)
         logger, logging.INFO, "Tastytrade stock order completed", correlation_id,
         order_id=order_id, symbol=signal.ticker,
         side=signal.side, strategy=signal.strategy,
-        dry_run=tastytrade_dry_run_enabled(),
+        dry_run=dry_run,
     )
 
     return _json_response({
         "status": "ok",
         "broker": "tastytrade",
-        "dry_run": tastytrade_dry_run_enabled(),
+        "dry_run": dry_run,
         "mode": "stock",
         "order_id": order_id,
         "symbol": signal.ticker,

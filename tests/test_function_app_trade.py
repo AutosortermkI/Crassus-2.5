@@ -239,6 +239,85 @@ def test_stock_trade_uses_tastytrade_broker_without_alpaca_account_checks(monkey
     assert params.entry_price == 100.0
 
 
+def test_tastytrade_stock_dry_run_skips_live_buying_power_gate(monkeypatch):
+    monkeypatch.setenv("ORDER_BROKER", "tastytrade")
+    monkeypatch.setenv("TASTYTRADE_DRY_RUN", "true")
+    monkeypatch.setenv("DEFAULT_STOCK_QTY", "2")
+    function_module = _reload_function_module(monkeypatch)
+
+    fake_client = SimpleNamespace()
+    submit_tastytrade = MagicMock(return_value="tt-dry-run-123")
+    buying_power_check = MagicMock(
+        side_effect=function_module.InsufficientBuyingPowerError("Insufficient Tastytrade buying power")
+    )
+
+    monkeypatch.setattr(function_module, "get_tastytrade_client", MagicMock(return_value=fake_client))
+    monkeypatch.setattr(function_module, "validate_tastytrade_position_limit", MagicMock(return_value=0))
+    monkeypatch.setattr(function_module, "get_tastytrade_account_equity", MagicMock(return_value=50000.0))
+    monkeypatch.setattr(function_module, "validate_tastytrade_buying_power", buying_power_check)
+    monkeypatch.setattr(function_module, "submit_tastytrade_stock_order", submit_tastytrade)
+    monkeypatch.setattr(function_module, "check_tastytrade_trading_safety", MagicMock(return_value=True))
+    monkeypatch.setattr(function_module, "is_duplicate_signal", lambda **kwargs: False)
+    monkeypatch.setattr(function_module, "record_webhook_event", lambda event: None)
+
+    req = _make_request(
+        "**New Buy Signal:**\n"
+        "AAPL 5 Min Candle\n"
+        "Strategy: bollinger_mean_reversion\n"
+        "Mode: stock\n"
+        "Price: 100.00"
+    )
+
+    resp = function_module.trade(req)
+    body = json.loads(resp.get_body())
+
+    assert resp.status_code == 200
+    assert body["broker"] == "tastytrade"
+    assert body["dry_run"] is True
+    assert body["order_id"] == "tt-dry-run-123"
+    buying_power_check.assert_not_called()
+    submit_tastytrade.assert_called_once()
+
+
+def test_tastytrade_stock_live_mode_enforces_buying_power_gate(monkeypatch):
+    monkeypatch.setenv("ORDER_BROKER", "tastytrade")
+    monkeypatch.setenv("TASTYTRADE_DRY_RUN", "false")
+    monkeypatch.setenv("DEFAULT_STOCK_QTY", "2")
+    function_module = _reload_function_module(monkeypatch)
+
+    fake_client = SimpleNamespace()
+    submit_tastytrade = MagicMock(return_value="tt-live-123")
+    buying_power_check = MagicMock(
+        side_effect=function_module.InsufficientBuyingPowerError("Insufficient Tastytrade buying power")
+    )
+
+    monkeypatch.setattr(function_module, "get_tastytrade_client", MagicMock(return_value=fake_client))
+    monkeypatch.setattr(function_module, "validate_tastytrade_position_limit", MagicMock(return_value=0))
+    monkeypatch.setattr(function_module, "get_tastytrade_account_equity", MagicMock(return_value=50000.0))
+    monkeypatch.setattr(function_module, "validate_tastytrade_buying_power", buying_power_check)
+    monkeypatch.setattr(function_module, "submit_tastytrade_stock_order", submit_tastytrade)
+    monkeypatch.setattr(function_module, "check_tastytrade_trading_safety", MagicMock(return_value=True))
+    monkeypatch.setattr(function_module, "is_duplicate_signal", lambda **kwargs: False)
+    monkeypatch.setattr(function_module, "record_webhook_event", lambda event: None)
+
+    req = _make_request(
+        "**New Buy Signal:**\n"
+        "AAPL 5 Min Candle\n"
+        "Strategy: bollinger_mean_reversion\n"
+        "Mode: stock\n"
+        "Price: 100.00"
+    )
+
+    resp = function_module.trade(req)
+    body = json.loads(resp.get_body())
+
+    assert resp.status_code == 422
+    assert body["broker"] == "tastytrade"
+    assert "Insufficient Tastytrade buying power" in body["error"]
+    buying_power_check.assert_called_once()
+    submit_tastytrade.assert_not_called()
+
+
 def test_tastytrade_options_mode_returns_controlled_not_implemented(monkeypatch):
     monkeypatch.setenv("ORDER_BROKER", "tastytrade")
     function_module = _reload_function_module(monkeypatch)
