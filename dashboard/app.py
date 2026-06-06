@@ -51,6 +51,7 @@ from webhook_store import build_signature, clear_events, get_activity_snapshot, 
 from parser import ParseError, parse_webhook_payload
 from paper_ledger import get_ledger_events as get_local_ledger_events
 from paper_ledger import get_paper_account as get_local_paper_account
+from market_data import get_market_data_summary as get_cached_market_data_summary
 
 app = Flask(__name__)
 app.secret_key = ensure_dashboard_session_secret()
@@ -356,14 +357,7 @@ def _alpaca_snapshot() -> dict:
 
 
 def _market_data_summary() -> dict:
-    return {
-        "status": "not_configured",
-        "source": "tastytrade_dxlink",
-        "connected": False,
-        "stale": True,
-        "subscribed_symbols": [],
-        "message": "Tastytrade DXLink market-data worker is not deployed yet.",
-    }
+    return get_cached_market_data_summary()
 
 
 def _broker_role(broker: str, stock_broker: str, options_broker: str, configured: bool) -> str:

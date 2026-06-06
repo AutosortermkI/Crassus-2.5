@@ -127,6 +127,7 @@ def get_paper_account() -> dict:
             position["qty"] -= close_qty
             cash += close_qty * price
 
+    _apply_quote_marks(positions)
     open_positions = [
         _round_position(position)
         for position in positions.values()
@@ -191,6 +192,39 @@ def _round_position(position: dict) -> dict:
         "unrealized_pl": round(float(position.get("unrealized_pl") or 0.0), 2),
         "source": position.get("source", "crassus_paper_ledger"),
     }
+
+
+def _apply_quote_marks(positions: Dict[str, dict]) -> None:
+    try:
+        from market_data import get_latest_quotes
+        quotes = get_latest_quotes()
+    except Exception:
+        quotes = {}
+
+    for symbol, position in positions.items():
+        quote = quotes.get(symbol)
+        if not isinstance(quote, dict):
+            continue
+        mark = _quote_mark(quote)
+        if mark is None:
+            continue
+        position["current_mark"] = round(mark, 4)
+        position["unrealized_pl"] = (mark - position["avg_entry"]) * position["qty"]
+
+
+def _quote_mark(quote: dict) -> Optional[float]:
+    last = _float_value(quote.get("last"), 0.0)
+    if last > 0:
+        return last
+    bid = _float_value(quote.get("bid"), 0.0)
+    ask = _float_value(quote.get("ask"), 0.0)
+    if bid > 0 and ask > 0:
+        return (bid + ask) / 2.0
+    if bid > 0:
+        return bid
+    if ask > 0:
+        return ask
+    return None
 
 
 def _use_blob_store() -> bool:

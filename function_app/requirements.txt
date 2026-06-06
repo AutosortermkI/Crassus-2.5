@@ -11,3 +11,6 @@ numpy>=1.24.0
 
 # Yahoo Finance HTTP client (direct API, not yfinance wrapper)
 requests>=2.31.0
+
+# Tastytrade DXLink market-data worker
+websockets>=10.4

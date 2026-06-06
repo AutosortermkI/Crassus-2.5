@@ -52,3 +52,34 @@ def test_trade_lifecycle_records_signal_and_dry_run_preflight(tmp_path, monkeypa
     assert [event["event_type"] for event in events] == ["signal_received", "broker_preflight"]
     assert events[1]["broker"] == "tastytrade"
     assert events[1]["execution"]["body"]["dry_run"] is True
+
+
+def test_paper_account_marks_positions_from_quote_cache(tmp_path, monkeypatch):
+    ledger_module = importlib.import_module("paper_ledger")
+    ledger = importlib.reload(ledger_module)
+    market_module = importlib.import_module("market_data")
+    market_data = importlib.reload(market_module)
+    monkeypatch.setattr(ledger, "LOCAL_STORE", tmp_path / "paper_ledger.json")
+    monkeypatch.setattr(market_data, "LOCAL_STORE", tmp_path / "market_data.json")
+    monkeypatch.setenv("AzureWebJobsStorage", "UseDevelopmentStorage=true")
+    monkeypatch.setenv("PAPER_STARTING_CASH", "10000")
+
+    ledger.record_ledger_event(
+        "paper_fill",
+        correlation_id="corr-fill",
+        fill={"symbol": "AAPL", "side": "buy", "qty": 2, "price": 100.0},
+    )
+    market_data.record_quote({
+        "source": "tastytrade_dxlink",
+        "event_type": "Trade",
+        "symbol": "AAPL",
+        "last": 110.0,
+        "timestamp": "2026-06-06T16:01:00+00:00",
+    })
+
+    account = ledger.get_paper_account()
+
+    assert account["cash"] == 9800.0
+    assert account["total_equity"] == 10020.0
+    assert account["unrealized_pl"] == 20.0
+    assert account["open_positions"][0]["current_mark"] == 110.0

@@ -75,6 +75,27 @@ def test_get_config_exposes_paper_ledger_settings(tmp_path, monkeypatch):
     assert config["PAPER_LEDGER_CONTAINER"]["value"] == "paper-ledger"
 
 
+def test_get_config_exposes_market_data_worker_settings(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "MARKET_DATA_ENABLED=true\n"
+        "MARKET_DATA_CONTAINER=market-data\n"
+        "MARKET_DATA_WATCHLIST=AAPL,SPY\n"
+        "MARKET_DATA_STALE_SECONDS=60\n"
+    )
+
+    monkeypatch.setattr(config_manager, "ENV_PATH", env_path)
+    monkeypatch.delenv("WEBSITE_SITE_NAME", raising=False)
+
+    config = config_manager.get_config()
+
+    assert config["MARKET_DATA_ENABLED"]["value"] == "true"
+    assert config["MARKET_DATA_ENABLED"]["group"] == "Market Data"
+    assert config["MARKET_DATA_CONTAINER"]["value"] == "market-data"
+    assert config["MARKET_DATA_WATCHLIST"]["value"] == "AAPL,SPY"
+    assert config["MARKET_DATA_STALE_SECONDS"]["value"] == "60"
+
+
 def test_split_trade_urls_use_environment_specific_function_apps(tmp_path, monkeypatch):
     env_path = tmp_path / ".env"
     env_path.write_text(
