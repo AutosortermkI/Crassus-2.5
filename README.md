@@ -794,6 +794,7 @@ curl -X POST http://localhost:7071/api/trade \
 | `alpaca-py` | Portfolio and account data |
 | `requests` | Webhook test functionality |
 | `azure-identity` / `azure-mgmt-web` | Hosted dashboard setting sync via Azure management APIs |
+| `azure-storage-blob` | Hosted paper-ledger and market-data cache continuity |
 | `gunicorn` | Production WSGI server for Azure App Service |
 
 > **Note:** Do NOT add `yfinance`. The direct API approach via `requests` + `YahooCrumbClient` is more reliable and avoids the heavy `yfinance` dependency tree.
