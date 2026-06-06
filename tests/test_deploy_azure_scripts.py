@@ -26,6 +26,32 @@ def test_unix_deploy_allows_dashboard_first_tastytrade_setup():
     ) not in script
 
 
+def test_unix_dashboard_package_is_minimal_and_uses_startup_script():
+    script = (ROOT_DIR / "deploy_azure.sh").read_text()
+    dashboard_settings_block = script.split("DASHBOARD_SETTINGS=(", 1)[1].split(")\n", 1)[0]
+
+    assert "startup_dashboard.sh" in script
+    assert "DASHBOARD_STARTUP_COMMAND='bash /home/site/wwwroot/startup_dashboard.sh'" in script
+    assert 'include_dirs = ["dashboard"]' in script
+    assert 'include_dirs = ["dashboard", "function_app"]' not in script
+    assert '"function_app/parser.py"' in script
+    assert '"function_app/tastytrade_orders.py"' in script
+    assert '"function_app/risk.py"' in script
+    assert '"function_app/utils.py"' in script
+    assert '"SCM_DO_BUILD_DURING_DEPLOYMENT=false"' in dashboard_settings_block
+    assert '"ENABLE_ORYX_BUILD=false"' in dashboard_settings_block
+
+
+def test_dashboard_startup_installs_dependencies_once():
+    script = (ROOT_DIR / "startup_dashboard.sh").read_text()
+
+    assert "requirements-dashboard.txt" in script
+    assert ".python_packages/lib/site-packages" in script
+    assert '[ ! -d "$SITE_PACKAGES/flask" ]' in script
+    assert '[ ! -d "$SITE_PACKAGES/requests" ]' in script
+    assert "exec gunicorn" in script
+
+
 def test_windows_deploy_allows_dashboard_first_tastytrade_setup():
     script = (ROOT_DIR / "deploy_azure.bat").read_text()
 

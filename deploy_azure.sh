@@ -127,14 +127,25 @@ include_files = [
     "dashboard_wsgi.py",
     "requirements.txt",
     "requirements-dashboard.txt",
+    "startup_dashboard.sh",
 ]
-include_dirs = ["dashboard", "function_app"]
+include_dirs = ["dashboard"]
+function_support_files = [
+    "function_app/parser.py",
+    "function_app/risk.py",
+    "function_app/tastytrade_orders.py",
+    "function_app/utils.py",
+]
 skip_dirs = {".git", ".venv", "__pycache__", ".pytest_cache", ".azure"}
 skip_suffixes = {".pyc", ".pyo"}
 skip_names = {"local.settings.json", ".options_targets.json", ".webhook_activity.json"}
 
 with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as zf:
     for rel in include_files:
+        path = root / rel
+        if path.exists():
+            zf.write(path, rel)
+    for rel in function_support_files:
         path = root / rel
         if path.exists():
             zf.write(path, rel)
@@ -271,7 +282,7 @@ DEFAULT_LOCATION="eastus"
 DEFAULT_STORAGE_ACCOUNT="crassusstorage25"
 PYTHON_VERSION="3.11"
 DEFAULT_DASHBOARD_SKU="F1"
-DASHBOARD_STARTUP_COMMAND='gunicorn --bind=0.0.0.0:${PORT:-8000} --timeout 600 dashboard_wsgi:app'
+DASHBOARD_STARTUP_COMMAND='bash /home/site/wwwroot/startup_dashboard.sh'
 
 RESOURCE_GROUP="$(env_default "$(load_env_var "AZURE_RESOURCE_GROUP")" "$DEFAULT_RESOURCE_GROUP")"
 LOCATION="$(env_default "$(load_env_var "AZURE_LOCATION")" "$DEFAULT_LOCATION")"
@@ -497,8 +508,8 @@ DASHBOARD_SETTINGS=(
     "DEPLOYED_GIT_BRANCH=$CURRENT_GIT_BRANCH"
     "DEPLOYED_GIT_SHA=$CURRENT_GIT_SHA"
     "DEPLOYED_AT_UTC=$DEPLOYED_AT_UTC"
-    "SCM_DO_BUILD_DURING_DEPLOYMENT=true"
-    "ENABLE_ORYX_BUILD=true"
+    "SCM_DO_BUILD_DURING_DEPLOYMENT=false"
+    "ENABLE_ORYX_BUILD=false"
 )
 if [ -n "$DASHBOARD_ACCESS_PASSWORD" ]; then
     DASHBOARD_SETTINGS+=("DASHBOARD_ACCESS_PASSWORD=$DASHBOARD_ACCESS_PASSWORD")
