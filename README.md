@@ -1,6 +1,6 @@
 # Crassus 2.5
 
-Azure Function app that receives TradingView webhook alerts through split stock/options routes. Stock/share routing defaults to **Alpaca**, options routing defaults to **Tastytrade** with Tastytrade options disabled until contract-symbol routing is verified. Includes a local/hosted dashboard GUI for broker routing, Tastytrade credential setup, TradingView webhook configuration, portfolio monitoring, and strategy parameter tuning. Ships with a built-in **backtesting engine** for replaying historical data through the same strategy logic used in live trading.
+Azure Function app that receives TradingView webhook alerts through split stock/options routes. Stock/share routing defaults to **Tastytrade** in dry-run mode, options routing defaults to **Tastytrade** with Tastytrade options disabled until contract-symbol routing is verified. Includes a local/hosted dashboard GUI for broker routing, Tastytrade credential setup, TradingView webhook configuration, portfolio monitoring, and strategy parameter tuning. Ships with a built-in **backtesting engine** for replaying historical data through the same strategy logic used in live trading.
 
 ---
 

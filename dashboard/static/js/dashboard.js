@@ -521,12 +521,19 @@
 
                 if (data.status === 'ok') {
                     const broker = data.broker === 'tastytrade' ? 'Tastytrade' : 'Alpaca';
-                    const mode = data.paper ? 'Cert/Sandbox' : 'Live';
+                    const mode = data.paper
+                        ? (data.broker === 'tastytrade' ? 'Cert/Sandbox' : 'Paper')
+                        : (data.broker === 'tastytrade' ? 'Production' : 'Live');
                     const dryRun = data.dry_run ? ' · Dry Run' : '';
                     statusBox.innerHTML = '<span class="status-pill status-success">Connected</span> ' +
                         esc(broker) + ' account ' + esc(data.account_id) + ' · ' + esc(mode + dryRun);
-                    badge.textContent = data.paper ? 'Broker Test Mode' : 'Live Trading';
-                    badge.className = 'badge ' + (data.paper ? 'badge-paper' : 'badge-live');
+                    if (data.dry_run) {
+                        badge.textContent = 'Dry Run Mode';
+                        badge.className = 'badge badge-paper';
+                    } else {
+                        badge.textContent = data.paper ? 'Broker Test Mode' : 'Live Trading';
+                        badge.className = 'badge ' + (data.paper ? 'badge-paper' : 'badge-live');
+                    }
                 } else if (data.status === 'missing') {
                     statusBox.textContent = 'No Tastytrade credentials configured. Webhook monitoring is still active.';
                     badge.textContent = 'Webhook Ready';

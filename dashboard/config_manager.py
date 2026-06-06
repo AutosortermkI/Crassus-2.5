@@ -98,7 +98,7 @@ PARAM_DEFINITIONS = OrderedDict([
         "label": "Stock / Share Broker",
         "group": "Broker Routing",
         "type": "select",
-        "default": "alpaca",
+        "default": "tastytrade",
         "description": "Routes stock/share webhook orders to alpaca or tastytrade",
     }),
     ("OPTIONS_BROKER", {

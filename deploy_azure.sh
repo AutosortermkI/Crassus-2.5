@@ -277,7 +277,7 @@ RESOURCE_GROUP="$(env_default "$(load_env_var "AZURE_RESOURCE_GROUP")" "$DEFAULT
 LOCATION="$(env_default "$(load_env_var "AZURE_LOCATION")" "$DEFAULT_LOCATION")"
 STORAGE_ACCOUNT="$(env_default "$(load_env_var "AZURE_STORAGE_ACCOUNT")" "$DEFAULT_STORAGE_ACCOUNT")"
 DASHBOARD_SKU="$(env_default "$(load_env_var "AZURE_DASHBOARD_SKU")" "$DEFAULT_DASHBOARD_SKU")"
-STOCK_BROKER="$(env_default "$(load_env_var "STOCK_BROKER")" "alpaca")"
+STOCK_BROKER="$(env_default "$(load_env_var "STOCK_BROKER")" "tastytrade")"
 OPTIONS_BROKER="$(env_default "$(load_env_var "OPTIONS_BROKER")" "tastytrade")"
 ORDER_BROKER="$(load_env_var "ORDER_BROKER")"
 
