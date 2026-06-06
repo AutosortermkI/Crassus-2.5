@@ -86,6 +86,7 @@ from webhook_activity import (
     record_webhook_event,
 )
 from paper_ledger import get_ledger_events, get_paper_account, record_trade_lifecycle
+from market_data import get_market_data_summary
 
 logger = get_logger(__name__)
 
@@ -400,6 +401,20 @@ def paper_ledger_account(req: func.HttpRequest) -> func.HttpResponse:
 
     return _json_response({
         "account": get_paper_account(),
+        "correlation_id": correlation_id,
+    }, 200)
+
+
+@app.route(route="market-data/summary", methods=["GET"])
+def market_data_summary(req: func.HttpRequest) -> func.HttpResponse:
+    """Return latest Tastytrade DXLink worker and quote-cache status."""
+    correlation_id = generate_correlation_id()
+    token_response = _authenticate_read_request(req, correlation_id)
+    if token_response is not None:
+        return token_response
+
+    return _json_response({
+        "market_data": get_market_data_summary(),
         "correlation_id": correlation_id,
     }, 200)
 

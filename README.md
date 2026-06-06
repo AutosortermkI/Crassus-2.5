@@ -59,7 +59,11 @@ The web dashboard (`http://localhost:5050`) provides:
 - **Latest webhook snapshot** — inspect the raw payload, parsed fields, and forward/execution result for the most recent TradingView alert.
 - **Active Webhooks sidebar** — see grouped, recently active alert signatures so partners can confirm what is currently firing.
 - **Recent Alerts table** — audit the latest webhook traffic without digging through Azure logs.
-- **Broker panel** — add Tastytrade credentials for stock OTOCO execution plus portfolio, positions, and order history under the webhook monitor.
+- **Broker Control Center** — see stock/options routing, Tastytrade sandbox/prod state, dry-run/live gates, Alpaca fallback state, deployed branch, and deployed commit.
+- **Crassus Paper Account** — preserve paper-trading continuity in Crassus-owned storage even when Tastytrade sandbox resets.
+- **Broker Snapshots** — view Tastytrade and Alpaca as separate external broker snapshots instead of blending them into paper ledger state.
+- **Market Data status** — show Tastytrade DXLink worker state, subscribed symbols, quote staleness, and token expiry once the worker is running.
+- **Tastytrade credential panel** — add Tastytrade credentials for stock and explicit-contract options OTOCO execution plus broker snapshots.
 - **Trading parameters and Azure metadata** — edit strategy settings, webhook retention, and shared Azure naming from the same page.
 
 ---
@@ -560,6 +564,8 @@ This script:
 8. Deploys the same `function_app` package to both Function Apps.
 9. Deploys the dashboard package and prints stock/options/legacy webhook URLs.
 
+The DXLink market-data code is deployed with the Function App package, but it is intended to run as a separate worker process such as an Azure WebJob or Container App. Do not run the long-lived websocket loop as an HTTP-triggered Consumption Function. Use `./run_market_data_worker.sh` as the worker startup command after setting `MARKET_DATA_WATCHLIST` and Tastytrade credentials.
+
 **Prerequisites:**
 - [Azure CLI](https://docs.microsoft.com/en-us/cli/azure/install-azure-cli) (`brew install azure-cli`)
 - [Azure Functions Core Tools v4](https://docs.microsoft.com/en-us/azure/azure-functions/functions-run-local) (`brew tap azure/functions && brew install azure-functions-core-tools@4`)
@@ -661,6 +667,13 @@ When credentials or webhook tokens are entered in the hosted dashboard, the dash
 | `MAX_DAILY_LOSS_DOLLARS` | disabled | Block new entries after daily loss breaches this dollar amount |
 | `MAX_DAILY_LOSS_PCT` | disabled | Block new entries after daily loss breaches this percentage |
 | `TASTYTRADE_PREVIOUS_NET_LIQUIDATING_VALUE` | disabled | Optional baseline for Tastytrade daily-loss checks |
+| `PAPER_FILL_MODE` | `preflight_only` | Crassus paper-ledger fill policy. Default records broker validation without assuming fills |
+| `PAPER_STARTING_CASH` | `0` | Starting cash for Crassus paper equity tracking; set explicitly for a durable simulated account |
+| `PAPER_LEDGER_CONTAINER` | `paper-ledger` | Azure Blob container for append-only paper-ledger events |
+| `MARKET_DATA_ENABLED` | `false` | Enables the separate Tastytrade DXLink market-data worker when deployed |
+| `MARKET_DATA_CONTAINER` | `market-data` | Azure Blob container for latest quote cache and worker status |
+| `MARKET_DATA_WATCHLIST` | empty | Comma-separated symbols for the DXLink worker to subscribe to |
+| `MARKET_DATA_STALE_SECONDS` | `60` | Seconds before cached quote data is marked stale |
 | `STALE_ORDER_MINUTES` | `120` | Cancel lingering unfilled stock entry orders after this many minutes |
 | `AZURE_SUBSCRIPTION_ID` | Active `az login` subscription | Required for the hosted dashboard to sync Azure app settings via managed identity / SDK |
 | `AZURE_DASHBOARD_APP_NAME` | Derived from function app name | Shared Azure Web App that serves the dashboard |

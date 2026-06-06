@@ -35,6 +35,8 @@ def test_unix_dashboard_package_is_minimal_and_uses_startup_script():
     assert "DASHBOARD_STARTUP_COMMAND='bash /home/site/wwwroot/startup_dashboard.sh'" in script
     assert 'include_dirs = ["dashboard"]' in script
     assert 'include_dirs = ["dashboard", "function_app"]' not in script
+    assert '"function_app/market_data.py"' in script
+    assert '"function_app/paper_ledger.py"' in script
     assert '"function_app/parser.py"' in script
     assert '"function_app/tastytrade_orders.py"' in script
     assert '"function_app/risk.py"' in script

@@ -357,7 +357,23 @@ def _alpaca_snapshot() -> dict:
 
 
 def _market_data_summary() -> dict:
-    return get_cached_market_data_summary()
+    urls = _function_route_urls("market-data/summary")
+    if not urls:
+        return get_cached_market_data_summary()
+
+    token = ensure_webhook_token()
+    failures = []
+    for source, url in urls.items():
+        try:
+            body = _fetch_function_json(url, token)
+            market_data = body.get("market_data") or {}
+            market_data.setdefault("source_app", source)
+            return market_data
+        except Exception as e:
+            failures.append(f"{source}: {e}")
+    fallback = get_cached_market_data_summary()
+    fallback["message"] = "; ".join(failures) or fallback.get("message", "")
+    return fallback
 
 
 def _broker_role(broker: str, stock_broker: str, options_broker: str, configured: bool) -> str:

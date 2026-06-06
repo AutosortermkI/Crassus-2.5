@@ -379,6 +379,30 @@ def test_paper_ledger_routes_return_events_and_account(monkeypatch):
     function_module.get_ledger_events.assert_called_once_with(limit=5)
 
 
+def test_market_data_summary_route_returns_cached_summary(monkeypatch):
+    function_module = _reload_function_module(monkeypatch)
+    monkeypatch.setattr(function_module, "get_market_data_summary", MagicMock(return_value={
+        "status": "ok",
+        "source": "tastytrade_dxlink",
+        "subscribed_symbols": ["AAPL"],
+    }))
+
+    req = func.HttpRequest(
+        method="GET",
+        url="http://localhost/api/market-data/summary",
+        headers={"X-Webhook-Token": "token"},
+        params={},
+        body=b"",
+    )
+
+    resp = function_module.market_data_summary(req)
+    body = json.loads(resp.get_body())
+
+    assert resp.status_code == 200
+    assert body["market_data"]["status"] == "ok"
+    assert body["market_data"]["subscribed_symbols"] == ["AAPL"]
+
+
 def test_tastytrade_stock_live_mode_enforces_buying_power_gate(monkeypatch):
     monkeypatch.setenv("ORDER_BROKER", "tastytrade")
     monkeypatch.setenv("TASTYTRADE_DRY_RUN", "false")
