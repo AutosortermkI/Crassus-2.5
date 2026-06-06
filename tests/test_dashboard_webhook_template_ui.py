@@ -25,6 +25,8 @@ def test_stock_test_payload_uses_low_priced_sample_without_changing_template():
 def test_broker_status_labels_paper_and_cert_modes_separately():
     js = (ROOT_DIR / "dashboard" / "static" / "js" / "dashboard.js").read_text()
 
-    assert "data.broker === 'tastytrade' ? 'Cert/Sandbox' : 'Paper'" in js
-    assert "data.broker === 'tastytrade' ? 'Production' : 'Live'" in js
-    assert "Dry Run Mode" in js
+    assert "fetch('/api/broker/status')" in js
+    assert "Tastytrade account" in js
+    assert "tasty.is_test ? 'Cert/Sandbox' : 'Production'" in js
+    assert "alpaca.paper ? 'Paper' : 'Live'" in js
+    assert "Dry Run" in js
