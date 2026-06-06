@@ -885,16 +885,21 @@ def api_webhook_receive():
 def api_webhook_test():
     """Create a synthetic webhook snapshot and forward it using dashboard rules."""
     try:
-        test_payload = {
-            "content": (
-                "**New Buy Signal:**\n"
-                "AAPL 5 Min Candle\n"
-                "Strategy: bollinger_mean_reversion\n"
-                "Mode: stock\n"
-                "Price: 189.50"
-            )
-        }
-        trade_url = _select_route_url(_trade_endpoint_urls(), {"mode": "stock"})
+        request_data = request.get_json(silent=True) or {}
+        test_payload = request_data.get("payload")
+        if not isinstance(test_payload, dict):
+            test_payload = {
+                "content": (
+                    "**New Buy Signal:**\n"
+                    "AAPL 5 Min Candle\n"
+                    "Strategy: bollinger_mean_reversion\n"
+                    "Mode: stock\n"
+                    "Price: 189.50"
+                )
+            }
+        parsed_signal = parse_webhook_payload(test_payload)
+        parsed_dict = vars(parsed_signal)
+        trade_url = _select_route_url(_trade_endpoint_urls(), parsed_dict)
         if trade_url == _dashboard_receive_url():
             event = _capture_webhook(test_payload, source="dashboard_test")
             return jsonify({
@@ -918,7 +923,10 @@ def api_webhook_test():
             "response_code": response.status_code,
             "response_body": body,
             "trade_url": trade_url,
+            "parsed": parsed_dict,
         }), (200 if response.status_code < 400 else response.status_code)
+    except ParseError as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 

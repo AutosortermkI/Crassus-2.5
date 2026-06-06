@@ -321,6 +321,47 @@ def test_dashboard_test_webhook_uses_stock_split_endpoint(tmp_path, monkeypatch)
     assert post.call_args.args[0] == "https://dev-stock.azurewebsites.net/api/trade-stock"
 
 
+def test_dashboard_test_webhook_uses_options_split_endpoint_for_options_payload(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "ENVIRONMENT_NAME=dev\n"
+        "WEBHOOK_AUTH_TOKEN=token-123\n"
+        "WEBHOOK_FORWARD_TARGET=azure\n"
+        "AZURE_DEV_STOCK_FUNCTION_BASE_URL=https://dev-stock.azurewebsites.net\n"
+        "AZURE_DEV_OPTIONS_FUNCTION_BASE_URL=https://dev-options.azurewebsites.net\n"
+    )
+    monkeypatch.setattr(config_manager, "ENV_PATH", env_path)
+    monkeypatch.delenv("WEBSITE_SITE_NAME", raising=False)
+
+    module = _load_app_module("dashboard_app_split_test_webhook_options_test")
+    response = MagicMock()
+    response.status_code = 200
+    response.headers = {"content-type": "application/json"}
+    response.json.return_value = {"status": "ok", "route": "trade-options"}
+    post = MagicMock(return_value=response)
+    monkeypatch.setattr(module.http_requests, "post", post)
+
+    api_response = module.app.test_client().post(
+        "/api/webhook/test",
+        json={
+            "payload": {
+                "ticker": "AAPL",
+                "side": "buy",
+                "strategy": "lorentzian_classification",
+                "mode": "options",
+                "price": "189.50",
+            }
+        },
+    )
+    body = api_response.get_json()
+
+    assert api_response.status_code == 200
+    assert body["trade_url"] == "https://dev-options.azurewebsites.net/api/trade-options"
+    post.assert_called_once()
+    assert post.call_args.args[0] == "https://dev-options.azurewebsites.net/api/trade-options"
+    assert post.call_args.kwargs["json"]["mode"] == "options"
+
+
 def test_webhook_activity_merges_split_function_results(tmp_path, monkeypatch):
     env_path = tmp_path / ".env"
     env_path.write_text(

@@ -49,6 +49,7 @@
 
     let configData = {};
     let _pendingSave = false;
+    let selectedTemplateKey = 'stockBuy';
     let brokerRouting = { stock_broker: 'alpaca', options_broker: 'tastytrade', environment_name: 'dev' };
 
     // ------------------------------------------------------------------
@@ -235,9 +236,21 @@
     // Template tab switcher
     // ------------------------------------------------------------------
     function setTemplate(key, tab) {
+        selectedTemplateKey = key;
         document.querySelectorAll('#templateTabs .template-tab').forEach(t => t.classList.remove('active'));
         tab.classList.add('active');
         document.getElementById('webhookTemplate').textContent = templateMap[key];
+    }
+
+    function sampleWebhookPayload(key) {
+        const template = templateMap[key] || templateMap.stockBuy;
+        return JSON.parse(
+            template
+                .replaceAll('{{ticker}}', 'AAPL')
+                .replaceAll('{{close}}', '189.50')
+                .replaceAll('{{volume}}', '2500000')
+                .replaceAll('{{timenow}}', new Date().toISOString())
+        );
     }
 
     // ------------------------------------------------------------------
@@ -449,7 +462,7 @@
         fetch('/api/webhook/test', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({}),
+            body: JSON.stringify({ payload: sampleWebhookPayload(selectedTemplateKey) }),
         })
         .then(r => r.json())
         .then(data => {
