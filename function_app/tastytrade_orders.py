@@ -20,7 +20,7 @@ from risk import (
     MaxPositionsExceededError,
     get_max_open_positions,
 )
-from utils import get_logger, log_structured, round_stock_price
+from utils import get_logger, log_structured, round_options_price, round_stock_price
 
 logger = get_logger(__name__)
 
@@ -96,6 +96,20 @@ class TastytradeBracketParams:
     """Parameters for a Tastytrade equity OTOCO bracket order."""
 
     symbol: str
+    side: str
+    qty: int
+    entry_price: float
+    take_profit_price: float
+    stop_price: float
+    stop_limit_price: float
+
+
+@dataclass(frozen=True)
+class TastytradeOptionBracketParams:
+    """Parameters for a Tastytrade long equity-option OTOCO bracket order."""
+
+    option_symbol: str
+    underlying: str
     side: str
     qty: int
     entry_price: float
@@ -288,6 +302,62 @@ def build_tastytrade_equity_otoco_order(params: TastytradeBracketParams) -> dict
     }
 
 
+def build_tastytrade_option_otoco_order(params: TastytradeOptionBracketParams) -> dict:
+    """Build a Tastytrade OTOCO payload for a long equity-option trade."""
+    side = params.side.strip().lower()
+    if side not in {"buy", "sell"}:
+        raise ValueError("Tastytrade option side must be 'buy' or 'sell'")
+    if params.qty <= 0:
+        raise ValueError("Tastytrade option quantity must be positive")
+    if params.entry_price <= 0:
+        raise ValueError("Tastytrade option entry price must be positive")
+
+    option_symbol = params.option_symbol.strip().upper()
+    if not option_symbol:
+        raise ValueError("Tastytrade option symbol is required")
+
+    leg = {
+        "instrument-type": "Equity Option",
+        "symbol": option_symbol,
+        "quantity": int(params.qty),
+    }
+
+    stop_order_type = _normalize_stop_order_type(
+        os.environ.get("TASTYTRADE_STOP_ORDER_TYPE", "Stop Limit")
+    )
+    stop_order = {
+        "order-type": stop_order_type,
+        "time-in-force": os.environ.get("TASTYTRADE_EXIT_TIME_IN_FORCE", "GTC"),
+        "stop-trigger": round_options_price(params.stop_price),
+        "legs": [{**leg, "action": "Sell to Close"}],
+    }
+    if stop_order_type == "Stop Limit":
+        stop_order["price"] = round_options_price(params.stop_limit_price)
+        stop_order["price-effect"] = "Credit"
+
+    return {
+        "type": "OTOCO",
+        "source": os.environ.get("TASTYTRADE_ORDER_SOURCE", "crassus-2.5"),
+        "trigger-order": {
+            "order-type": "Limit",
+            "price": round_options_price(params.entry_price),
+            "price-effect": "Debit",
+            "time-in-force": os.environ.get("TASTYTRADE_ENTRY_TIME_IN_FORCE", "Day"),
+            "legs": [{**leg, "action": "Buy to Open"}],
+        },
+        "orders": [
+            {
+                "order-type": "Limit",
+                "price": round_options_price(params.take_profit_price),
+                "price-effect": "Credit",
+                "time-in-force": os.environ.get("TASTYTRADE_EXIT_TIME_IN_FORCE", "GTC"),
+                "legs": [{**leg, "action": "Sell to Close"}],
+            },
+            stop_order,
+        ],
+    }
+
+
 def submit_tastytrade_stock_order(
     client: TastytradeClient,
     params: TastytradeBracketParams,
@@ -312,6 +382,38 @@ def submit_tastytrade_stock_order(
         logger,
         logging.INFO,
         "Tastytrade stock OTOCO accepted",
+        correlation_id,
+        order_id=order_id,
+        dry_run=dry_run,
+    )
+    return order_id
+
+
+def submit_tastytrade_option_order(
+    client: TastytradeClient,
+    params: TastytradeOptionBracketParams,
+    correlation_id: str,
+) -> str:
+    """Submit or dry-run a Tastytrade long-option OTOCO order and return an ID-like value."""
+    dry_run = tastytrade_dry_run_enabled()
+    payload = build_tastytrade_option_otoco_order(params)
+    log_structured(
+        logger,
+        logging.INFO,
+        "Submitting Tastytrade option OTOCO order",
+        correlation_id,
+        contract=params.option_symbol.upper(),
+        underlying=params.underlying.upper(),
+        side=params.side,
+        qty=params.qty,
+        dry_run=dry_run,
+    )
+    response = client.place_complex_order(payload, dry_run=dry_run)
+    order_id = _extract_order_id(response)
+    log_structured(
+        logger,
+        logging.INFO,
+        "Tastytrade option OTOCO accepted",
         correlation_id,
         order_id=order_id,
         dry_run=dry_run,

@@ -4,7 +4,7 @@ Dashboard helpers for Tastytrade account verification and snapshots.
 
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 FUNCTION_APP_DIR = Path(__file__).resolve().parent.parent / "function_app"
 if str(FUNCTION_APP_DIR) not in sys.path:
@@ -168,7 +168,7 @@ def _float_value(source: dict, *keys: str, default: float = 0.0) -> float:
     return default
 
 
-def _float_or_none(value: Any) -> float | None:
+def _float_or_none(value: Any) -> Optional[float]:
     try:
         return float(value)
     except (TypeError, ValueError):

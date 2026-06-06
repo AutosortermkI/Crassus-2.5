@@ -13,6 +13,7 @@ def test_unix_deploy_allows_dashboard_first_tastytrade_setup():
     assert "local -n" not in script
     assert "TASTYTRADE_IS_TEST=${TASTYTRADE_IS_TEST:-false}" in script
     assert "TASTYTRADE_DRY_RUN=${TASTYTRADE_DRY_RUN:-true}" in script
+    assert "ENABLE_TASTYTRADE_OPTIONS=${ENABLE_TASTYTRADE_OPTIONS:-true}" in script
     assert 'upsert_env_var "TASTYTRADE_IS_TEST" "$TASTYTRADE_IS_TEST"' in script
     assert 'upsert_env_var "TASTYTRADE_DRY_RUN" "$TASTYTRADE_DRY_RUN"' in script
     assert 'COMMON_FUNCTION_SETTINGS+=("TASTYTRADE_IS_TEST=$TASTYTRADE_IS_TEST")' in script

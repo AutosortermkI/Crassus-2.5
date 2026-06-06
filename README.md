@@ -472,14 +472,14 @@ for name, sm in metrics.by_strategy.items():
 
 ### Data source vs execution venue
 
-Current status: options execution remains safe by default. If `OPTIONS_BROKER=tastytrade` and `ENABLE_TASTYTRADE_OPTIONS=false`, the Function returns HTTP 501 instead of sending an unverified option order.
+Current status: Tastytrade options execution requires explicit contract fields in the TradingView payload. A valid options alert must include `option_symbol` (or `underlying`, `expiration`, `option_type`, and `strike`) plus `option_price`/`premium`; under-specified alerts return HTTP 422 instead of guessing a contract.
 
 | Concern | Source | Why |
 |---|---|---|
 | **Market data** (bid/ask/IV/volume/OI) | Yahoo Finance | Richer options data than Alpaca's trading API |
 | **Greeks computation** | `greeks.py` (local) | Black-Scholes from Yahoo's IV or solved from market prices |
 | **Contract screening** | `options_screener.py` | Uses Yahoo data + Greeks for delta-based selection |
-| **Order execution** | Alpaca fallback only | Tastytrade option symbol routing still needs end-to-end verification |
+| **Order execution** | Tastytrade for explicit contracts | The Function builds a long-option OTOCO payload and sends it through Tastytrade dry-run/live endpoints according to `TASTYTRADE_DRY_RUN` |
 
 ### Why no bracket orders for options?
 
@@ -643,8 +643,8 @@ When credentials or webhook tokens are entered in the hosted dashboard, the dash
 | Variable | Default | Description |
 |---|---|---|
 | `TASTYTRADE_IS_TEST` | `false` | `true` = Tastytrade cert/test API for sandbox grants, `false` = production API for normal tastytrade OAuth grants |
-| `TASTYTRADE_DRY_RUN` | `true` | Validate stock OTOCO payloads with Tastytrade dry-run endpoints without routing orders |
-| `ENABLE_TASTYTRADE_OPTIONS` | `false` | Keep Tastytrade options disabled until contract-symbol routing is verified |
+| `TASTYTRADE_DRY_RUN` | `true` | Validate stock and explicit-contract option OTOCO payloads with Tastytrade dry-run endpoints without routing live orders |
+| `ENABLE_TASTYTRADE_OPTIONS` | `true` | Allow Tastytrade options execution when alerts include explicit contract fields |
 | `OPTIONS_ALLOW_FALLBACK_TO_ALPACA` | `false` | Allow explicit Alpaca fallback when options broker is Tastytrade |
 | `TASTYTRADE_ENTRY_TIME_IN_FORCE` | `Day` | Time-in-force for the opening OTOCO order |
 | `TASTYTRADE_EXIT_TIME_IN_FORCE` | `GTC` | Time-in-force for take-profit and stop exit orders |

@@ -33,6 +33,19 @@ def _make_request(content: str, token: str = "token", route: str = "trade") -> f
     )
 
 
+def _make_json_request(payload: dict, token: str = "token", route: str = "trade") -> func.HttpRequest:
+    return func.HttpRequest(
+        method="POST",
+        url=f"http://localhost/api/{route}",
+        headers={
+            "Content-Type": "application/json",
+            "X-Webhook-Token": token,
+        },
+        params={},
+        body=json.dumps(payload).encode(),
+    )
+
+
 def test_function_app_imports_without_alpaca_credentials(monkeypatch):
     monkeypatch.delenv("ALPACA_API_KEY", raising=False)
     monkeypatch.delenv("ALPACA_SECRET_KEY", raising=False)
@@ -342,6 +355,83 @@ def test_tastytrade_options_mode_returns_controlled_not_implemented(monkeypatch)
     assert resp.status_code == 501
     assert body["broker"] == "tastytrade"
     assert "Tastytrade options routing" in body["error"]
+
+
+def test_tastytrade_options_route_submits_explicit_contract_dry_run(monkeypatch):
+    monkeypatch.setenv("OPTIONS_BROKER", "tastytrade")
+    monkeypatch.setenv("ENABLE_TASTYTRADE_OPTIONS", "true")
+    monkeypatch.setenv("TASTYTRADE_DRY_RUN", "true")
+    function_module = _reload_function_module(monkeypatch)
+
+    submit_tastytrade = MagicMock(return_value="tt-option-dry-run")
+    monkeypatch.setattr(function_module, "check_tastytrade_trading_safety", MagicMock(return_value=True))
+    monkeypatch.setattr(function_module, "check_trading_safety", MagicMock(return_value=True))
+    monkeypatch.setattr(function_module, "get_tastytrade_client", MagicMock(return_value=object()))
+    monkeypatch.setattr(function_module, "validate_tastytrade_position_limit", MagicMock(return_value=0))
+    monkeypatch.setattr(function_module, "validate_tastytrade_buying_power", MagicMock())
+    monkeypatch.setattr(function_module, "submit_tastytrade_option_order", submit_tastytrade)
+    monkeypatch.setattr(function_module, "is_duplicate_signal", lambda **kwargs: False)
+    monkeypatch.setattr(function_module, "record_webhook_event", lambda event: None)
+
+    req = _make_json_request(
+        {
+            "ticker": "AAPL",
+            "side": "buy",
+            "strategy": "lorentzian_classification",
+            "mode": "options",
+            "price": "189.50",
+            "option_symbol": "AAPL  260117C00190000",
+            "option_price": "1.00",
+        },
+        token="options-token",
+        route="trade-options",
+    )
+
+    resp = function_module.trade_options(req)
+    body = json.loads(resp.get_body())
+
+    assert resp.status_code == 200
+    assert body["status"] == "ok"
+    assert body["broker"] == "tastytrade"
+    assert body["dry_run"] is True
+    assert body["contract"] == "AAPL  260117C00190000"
+    assert body["premium"] == 1.0
+    assert body["take_profit"] == 1.5
+    assert body["stop_loss"] == 0.6
+    assert submit_tastytrade.call_args.args[1].option_symbol == "AAPL  260117C00190000"
+    assert submit_tastytrade.call_args.args[1].qty == 1
+
+
+def test_tastytrade_options_route_requires_explicit_contract(monkeypatch):
+    monkeypatch.setenv("OPTIONS_BROKER", "tastytrade")
+    monkeypatch.setenv("ENABLE_TASTYTRADE_OPTIONS", "true")
+    function_module = _reload_function_module(monkeypatch)
+
+    monkeypatch.setattr(function_module, "check_tastytrade_trading_safety", MagicMock(return_value=True))
+    monkeypatch.setattr(function_module, "check_trading_safety", MagicMock(return_value=True))
+    monkeypatch.setattr(function_module, "get_tastytrade_client", MagicMock(return_value=object()))
+    monkeypatch.setattr(function_module, "validate_tastytrade_position_limit", MagicMock(return_value=0))
+    monkeypatch.setattr(function_module, "is_duplicate_signal", lambda **kwargs: False)
+    monkeypatch.setattr(function_module, "record_webhook_event", lambda event: None)
+
+    req = _make_json_request(
+        {
+            "ticker": "AAPL",
+            "side": "buy",
+            "strategy": "lorentzian_classification",
+            "mode": "options",
+            "price": "189.50",
+        },
+        token="options-token",
+        route="trade-options",
+    )
+
+    resp = function_module.trade_options(req)
+    body = json.loads(resp.get_body())
+
+    assert resp.status_code == 422
+    assert body["broker"] == "tastytrade"
+    assert "Option symbol requires" in body["error"]
 
 
 def test_broker_helpers_use_split_vars_and_legacy_fallback(monkeypatch):

@@ -5,9 +5,11 @@ import pytest
 from tastytrade_orders import (
     TastytradeAPIError,
     TastytradeBracketParams,
+    TastytradeOptionBracketParams,
     TastytradeClient,
     TastytradeConfig,
     build_tastytrade_equity_otoco_order,
+    build_tastytrade_option_otoco_order,
     get_tastytrade_account_equity,
     resolve_tastytrade_option_symbol,
     validate_tastytrade_buying_power,
@@ -72,6 +74,40 @@ def test_build_sell_equity_otoco_payload_reverses_actions_and_price_effects():
     assert payload["orders"][0]["legs"][0]["action"] == "Buy to Close"
     assert payload["orders"][1]["price-effect"] == "Debit"
     assert payload["orders"][1]["legs"][0]["action"] == "Buy to Close"
+
+
+def test_build_option_otoco_payload_uses_equity_option_leg_and_long_option_actions():
+    params = TastytradeOptionBracketParams(
+        option_symbol="AAPL  260117C00190000",
+        underlying="AAPL",
+        side="sell",
+        qty=1,
+        entry_price=1.0,
+        take_profit_price=1.5,
+        stop_price=0.6,
+        stop_limit_price=0.6,
+    )
+
+    payload = build_tastytrade_option_otoco_order(params)
+
+    assert payload["type"] == "OTOCO"
+    assert payload["trigger-order"]["price"] == 1.0
+    assert payload["trigger-order"]["price-effect"] == "Debit"
+    assert payload["trigger-order"]["legs"] == [
+        {
+            "instrument-type": "Equity Option",
+            "symbol": "AAPL  260117C00190000",
+            "quantity": 1,
+            "action": "Buy to Open",
+        }
+    ]
+    assert payload["orders"][0]["price"] == 1.5
+    assert payload["orders"][0]["price-effect"] == "Credit"
+    assert payload["orders"][0]["legs"][0]["action"] == "Sell to Close"
+    assert payload["orders"][1]["order-type"] == "Stop Limit"
+    assert payload["orders"][1]["stop-trigger"] == 0.6
+    assert payload["orders"][1]["price"] == 0.6
+    assert payload["orders"][1]["price-effect"] == "Credit"
 
 
 def test_resolve_tastytrade_option_symbol_builds_padded_occ_symbol():

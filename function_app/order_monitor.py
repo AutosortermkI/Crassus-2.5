@@ -13,7 +13,7 @@ import logging
 import os
 import time
 from datetime import datetime, timezone
-from typing import Callable, TypeVar
+from typing import Callable, Optional, TypeVar
 
 from alpaca.common.exceptions import APIError
 
@@ -106,7 +106,7 @@ def _backoff_and_log(
     time.sleep(wait)
 
 
-def _extract_status(exc: APIError) -> int | None:
+def _extract_status(exc: APIError) -> Optional[int]:
     """Best-effort extraction of HTTP status from APIError."""
     if hasattr(exc, "status_code"):
         return exc.status_code

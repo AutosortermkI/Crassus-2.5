@@ -133,8 +133,8 @@ PARAM_DEFINITIONS = OrderedDict([
         "label": "Enable TastyTrade Options",
         "group": "General Settings",
         "type": "bool",
-        "default": "false",
-        "description": "Must remain false until TastyTrade contract-symbol routing is verified",
+        "default": "true",
+        "description": "Allows Tastytrade options execution when the alert includes explicit contract fields",
     }),
     ("OPTIONS_ALLOW_FALLBACK_TO_ALPACA", {
         "label": "Options Fallback To Alpaca",

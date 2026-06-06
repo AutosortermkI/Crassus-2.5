@@ -33,6 +33,9 @@
   "strategy": "lorentzian_classification",
   "mode": "options",
   "price": "{{close}}",
+  "option_symbol": "{{option_symbol}}",
+  "option_price": "{{option_price}}",
+  "contracts": "1",
   "volume": "{{volume}}",
   "time": "{{timenow}}"
 }`,
@@ -42,6 +45,9 @@
   "strategy": "lorentzian_classification",
   "mode": "options",
   "price": "{{close}}",
+  "option_symbol": "{{option_symbol}}",
+  "option_price": "{{option_price}}",
+  "contracts": "1",
   "volume": "{{volume}}",
   "time": "{{timenow}}"
 }`
@@ -53,7 +59,12 @@
     let brokerRouting = { stock_broker: 'alpaca', options_broker: 'tastytrade', environment_name: 'dev' };
     const sampleMarketData = {
         stock: { ticker: 'F', close: '14.90' },
-        options: { ticker: 'AAPL', close: '189.50' }
+        options: {
+            ticker: 'AAPL',
+            close: '189.50',
+            optionSymbol: 'AAPL  270115C00190000',
+            optionPrice: '1.00'
+        }
     };
 
     // ------------------------------------------------------------------
@@ -253,6 +264,8 @@
             template
                 .replaceAll('{{ticker}}', sample.ticker)
                 .replaceAll('{{close}}', sample.close)
+                .replaceAll('{{option_symbol}}', sample.optionSymbol || '')
+                .replaceAll('{{option_price}}', sample.optionPrice || '')
                 .replaceAll('{{volume}}', '2500000')
                 .replaceAll('{{timenow}}', new Date().toISOString())
         );

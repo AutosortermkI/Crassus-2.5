@@ -235,7 +235,7 @@ def test_get_config_exposes_split_broker_routing_defaults(tmp_path, monkeypatch)
     assert config["ENVIRONMENT_NAME"]["value"] == "dev"
     assert config["STOCK_BROKER"]["value"] == "tastytrade"
     assert config["OPTIONS_BROKER"]["value"] == "tastytrade"
-    assert config["ENABLE_TASTYTRADE_OPTIONS"]["value"] == "false"
+    assert config["ENABLE_TASTYTRADE_OPTIONS"]["value"] == "true"
 
 
 def test_resolve_broker_sync_targets_uses_dev_apps_for_dev_dashboard(tmp_path, monkeypatch):

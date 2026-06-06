@@ -62,9 +62,12 @@ from order_monitor import submit_with_retry, check_stock_orders, cancel_stale_or
 from tastytrade_orders import (
     TastytradeAPIError,
     TastytradeBracketParams,
+    TastytradeOptionBracketParams,
     TastytradeConfigurationError,
     get_tastytrade_account_equity,
     get_tastytrade_client,
+    resolve_tastytrade_option_symbol,
+    submit_tastytrade_option_order,
     submit_tastytrade_stock_order,
     tastytrade_dry_run_enabled,
     validate_tastytrade_buying_power,
@@ -295,7 +298,7 @@ def _handle_trade_request(
         if signal.mode == "stock":
             body, status_code = _route_stock_order(signal, strategy_config, correlation_id)
         elif signal.mode == "options":
-            body, status_code = _route_options_order(signal, strategy_config, correlation_id)
+            body, status_code = _route_options_order(signal, strategy_config, correlation_id, data)
         else:
             body, status_code = {"error": f"Unsupported mode: {signal.mode}"}, 400
 
@@ -441,7 +444,7 @@ def _route_stock_order(signal, strategy_config, correlation_id: str) -> tuple[di
     return body, status_code
 
 
-def _route_options_order(signal, strategy_config, correlation_id: str) -> tuple[dict, int]:
+def _route_options_order(signal, strategy_config, correlation_id: str, data: Optional[dict] = None) -> tuple[dict, int]:
     broker = get_options_broker()
     if broker == "tastytrade":
         if not _env_bool("ENABLE_TASTYTRADE_OPTIONS", False):
@@ -452,20 +455,16 @@ def _route_options_order(signal, strategy_config, correlation_id: str) -> tuple[
                 "enabled": False,
                 "correlation_id": correlation_id,
             }, 501
-        if not _env_bool("OPTIONS_ALLOW_FALLBACK_TO_ALPACA", False):
-            return {
-                "error": "TastyTrade options routing is not implemented until contract-symbol routing is verified.",
-                "broker": "tastytrade",
-                "route": "trade-options",
-                "enabled": True,
-                "correlation_id": correlation_id,
-            }, 501
+        body, status_code = _response_body_status(
+            _handle_tastytrade_options_order(signal, strategy_config, correlation_id, data or {})
+        )
+        body.setdefault("broker", "tastytrade")
+        body.setdefault("route", "trade-options")
+        return body, status_code
 
     body, status_code = _response_body_status(_handle_options_order(signal, strategy_config, correlation_id))
     body.setdefault("broker", "alpaca")
     body.setdefault("route", "trade-options")
-    if broker == "tastytrade":
-        body["fallback_broker"] = "alpaca"
     return body, status_code
 
 
@@ -629,6 +628,179 @@ def _handle_tastytrade_stock_order(signal, strategy_config, correlation_id: str)
         "strategy": signal.strategy,
         "correlation_id": correlation_id,
     }, 200)
+
+
+def _handle_tastytrade_options_order(
+    signal,
+    strategy_config,
+    correlation_id: str,
+    data: dict,
+) -> func.HttpResponse:
+    """Process an explicit-contract Tastytrade long-option order."""
+    option_data = _option_payload_data(data, signal)
+    try:
+        option_symbol = resolve_tastytrade_option_symbol(option_data)
+        entry_price = _option_entry_price(option_data)
+    except ValueError as e:
+        return _json_response({
+            "error": str(e),
+            "broker": "tastytrade",
+            "route": "trade-options",
+            "correlation_id": correlation_id,
+        }, 422)
+
+    tp_price, sl_price = compute_options_exit_prices(
+        premium=entry_price,
+        side=signal.side,
+        config=strategy_config,
+    )
+    stop_limit_price = _option_stop_limit_price(option_data, sl_price)
+    qty = _option_contract_qty(option_data, strategy_config, entry_price)
+    required_dollars = qty * entry_price * 100.0
+    dry_run = tastytrade_dry_run_enabled()
+
+    client = get_tastytrade_client()
+    try:
+        validate_tastytrade_position_limit(client, correlation_id)
+    except MaxPositionsExceededError as e:
+        log_structured(logger, logging.WARNING, str(e), correlation_id)
+        return _json_response({"error": str(e), "broker": "tastytrade", "correlation_id": correlation_id}, 429)
+
+    if dry_run:
+        log_structured(
+            logger,
+            logging.INFO,
+            "Skipping Tastytrade option buying power check in dry-run mode",
+            correlation_id,
+            required=required_dollars,
+        )
+    else:
+        try:
+            validate_tastytrade_buying_power(client, required_dollars, correlation_id)
+        except InsufficientBuyingPowerError as e:
+            return _json_response({"error": str(e), "broker": "tastytrade", "correlation_id": correlation_id}, 422)
+
+    params = TastytradeOptionBracketParams(
+        option_symbol=option_symbol,
+        underlying=signal.ticker,
+        side=signal.side,
+        qty=qty,
+        entry_price=entry_price,
+        take_profit_price=tp_price,
+        stop_price=sl_price,
+        stop_limit_price=stop_limit_price,
+    )
+    order_id = submit_tastytrade_option_order(client, params, correlation_id)
+
+    log_structured(
+        logger, logging.INFO, "Tastytrade option order completed", correlation_id,
+        order_id=order_id, contract=option_symbol,
+        underlying=signal.ticker, side=signal.side,
+        strategy=signal.strategy, dry_run=dry_run,
+    )
+
+    return _json_response({
+        "status": "ok",
+        "broker": "tastytrade",
+        "dry_run": dry_run,
+        "mode": "options",
+        "order_id": order_id,
+        "contract": option_symbol,
+        "underlying": signal.ticker,
+        "side": signal.side,
+        "qty": qty,
+        "premium": round_options_price(entry_price),
+        "take_profit": round_options_price(tp_price),
+        "stop_loss": round_options_price(sl_price),
+        "stop_limit": round_options_price(stop_limit_price),
+        "strategy": signal.strategy,
+        "max_dollar_risk": get_max_dollar_risk(),
+        "correlation_id": correlation_id,
+    }, 200)
+
+
+def _option_payload_data(data: dict, signal) -> dict:
+    option_data = dict(data or {})
+    content = option_data.get("content")
+    if isinstance(content, str) and content.strip():
+        option_data.update(_option_fields_from_content(content))
+    option_data.setdefault("underlying", signal.ticker)
+    option_data.setdefault("symbol", signal.ticker)
+    return option_data
+
+
+def _option_fields_from_content(content: str) -> dict:
+    fields = {}
+    key_map = {
+        "option_symbol": "option_symbol",
+        "contract_symbol": "contract_symbol",
+        "expiration": "expiration",
+        "option_type": "option_type",
+        "strike": "strike",
+        "option_price": "option_price",
+        "premium": "premium",
+        "limit_price": "limit_price",
+        "entry_price": "entry_price",
+        "qty": "qty",
+        "quantity": "quantity",
+        "contracts": "contracts",
+        "stop_limit": "stop_limit",
+        "stop_limit_price": "stop_limit_price",
+        "option_stop_limit": "option_stop_limit",
+    }
+    for line in content.splitlines():
+        if ":" not in line:
+            continue
+        raw_key, raw_value = line.split(":", 1)
+        normalized_key = raw_key.strip().lower().replace("-", "_").replace(" ", "_")
+        target_key = key_map.get(normalized_key)
+        if target_key:
+            fields[target_key] = raw_value.strip()
+    return fields
+
+
+def _option_entry_price(data: dict) -> float:
+    for key in ("option_price", "premium", "limit_price", "entry_price"):
+        if data.get(key) not in (None, ""):
+            return _positive_float(data.get(key), "Tastytrade option entry price")
+    raise ValueError(
+        "Tastytrade options require option_price, premium, limit_price, or entry_price"
+    )
+
+
+def _option_stop_limit_price(data: dict, stop_price: float) -> float:
+    for key in ("option_stop_limit", "stop_limit_price", "stop_limit"):
+        if data.get(key) not in (None, ""):
+            return _positive_float(data.get(key), "Tastytrade option stop-limit price")
+    return stop_price
+
+
+def _option_contract_qty(data: dict, strategy_config, entry_price: float) -> int:
+    for key in ("contracts", "qty", "quantity"):
+        if data.get(key) in (None, ""):
+            continue
+        try:
+            qty = int(float(data.get(key)))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Tastytrade option contract quantity must be numeric") from exc
+        if qty <= 0:
+            raise ValueError("Tastytrade option contract quantity must be positive")
+        return qty
+    return compute_options_qty(
+        max_dollar_risk=get_max_dollar_risk(),
+        stop_loss_pct=strategy_config.options_sl_pct,
+        premium_price=entry_price,
+    )
+
+
+def _positive_float(value, label: str) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{label} must be numeric") from exc
+    if parsed <= 0:
+        raise ValueError(f"{label} must be positive")
+    return parsed
 
 
 def _handle_options_order(signal, strategy_config, correlation_id: str) -> func.HttpResponse:
