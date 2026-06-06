@@ -175,6 +175,37 @@ def _json_bool(data: dict, key: str, default: bool) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _env_bool(env: dict, key: str, default: bool = False) -> bool:
+    value = env.get(key)
+    if value in (None, ""):
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_int(env: dict, *keys: str, default: int = 0) -> int:
+    for key in keys:
+        value = env.get(key)
+        if value in (None, ""):
+            continue
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            continue
+    return default
+
+
+def _env_float(env: dict, *keys: str, default: float = 0.0) -> float:
+    for key in keys:
+        value = env.get(key)
+        if value in (None, ""):
+            continue
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            continue
+    return default
+
+
 def _trade_endpoint_urls() -> dict:
     target, urls = _forwarding_targets()
     if target == "none":
@@ -197,6 +228,138 @@ def _activity_endpoint_urls() -> dict:
         root, _, _ = urls["default"].partition("/api/")
         return {"custom": f"{root}/api/webhook-activity"}
     return {}
+
+
+def _broker_role(broker: str, stock_broker: str, options_broker: str, configured: bool) -> str:
+    if broker in {stock_broker, options_broker}:
+        return "active" if configured else "inactive"
+    return "fallback-only" if configured else "inactive"
+
+
+def _tastytrade_status(env: dict, stock_broker: str, options_broker: str) -> dict:
+    configured = tt_has_credentials()
+    is_test = _env_bool(env, "TASTYTRADE_IS_TEST", False)
+    dry_run = _env_bool(env, "TASTYTRADE_DRY_RUN", True)
+    status = {
+        "configured": configured,
+        "status": "missing",
+        "role": _broker_role("tastytrade", stock_broker, options_broker, configured),
+        "account_number": (env.get("TASTYTRADE_ACCOUNT_NUMBER") or "").strip(),
+        "is_test": is_test,
+        "dry_run": dry_run,
+        "options_enabled": _env_bool(env, "ENABLE_TASTYTRADE_OPTIONS", True),
+        "last_verified_at": "",
+        "last_verification": None,
+        "message": "Tastytrade credentials are not configured.",
+    }
+    if not configured:
+        return status
+
+    result = tt_verify_credentials()
+    status["last_verified_at"] = _utcnow_iso()
+    status["last_verification"] = {"ok": bool(result.get("ok"))}
+    if result.get("ok"):
+        status["status"] = "ok"
+        status["account_number"] = result.get("account_id") or status["account_number"]
+        status["message"] = "Tastytrade credentials verified."
+        status["last_verification"].update({
+            "account_id": status["account_number"],
+            "paper": result.get("paper", is_test),
+            "dry_run": result.get("dry_run", dry_run),
+        })
+        return status
+
+    error = str(result.get("error") or "Tastytrade verification failed.")
+    status["status"] = "invalid"
+    status["message"] = error
+    status["last_verification"]["error"] = error
+    lowered = error.lower()
+    if any(marker in lowered for marker in ("invalid", "revoked", "customer", "grant", "credential")):
+        api_mode = "cert/sandbox" if is_test else "production"
+        status["mode_warning"] = (
+            f"Tastytrade {api_mode} verification failed. Confirm the account number, "
+            "client secret, and refresh token were created in the same Tastytrade environment."
+        )
+    return status
+
+
+def _alpaca_status(env: dict, stock_broker: str, options_broker: str) -> dict:
+    configured = has_credentials()
+    paper = _env_bool(env, "ALPACA_PAPER", True)
+    status = {
+        "configured": configured,
+        "status": "missing",
+        "role": _broker_role("alpaca", stock_broker, options_broker, configured),
+        "paper": paper,
+        "last_verified_at": "",
+        "last_verification": None,
+        "message": "Alpaca credentials are not configured.",
+    }
+    if not configured:
+        return status
+
+    result = verify_credentials()
+    status["last_verified_at"] = _utcnow_iso()
+    status["last_verification"] = {"ok": bool(result.get("ok"))}
+    if result.get("ok"):
+        status["status"] = "ok"
+        status["account_id"] = result.get("account_id", "")
+        status["paper"] = result.get("paper", paper)
+        status["message"] = "Alpaca credentials verified."
+        status["last_verification"].update({
+            "account_id": status["account_id"],
+            "paper": status["paper"],
+        })
+        return status
+
+    error = str(result.get("error") or "Alpaca verification failed.")
+    status["status"] = "invalid"
+    status["message"] = error
+    status["last_verification"]["error"] = error
+    return status
+
+
+def _safety_status(env: dict, stock_broker: str, options_broker: str) -> dict:
+    live_confirmed = str(env.get("LIVE_TRADING_CONFIRMED") or "").strip().lower() == "yes"
+    trading_halted = _env_bool(env, "TRADING_HALTED", False)
+    tastytrade_live_route = (
+        "tastytrade" in {stock_broker, options_broker}
+        and not _env_bool(env, "TASTYTRADE_IS_TEST", False)
+        and not _env_bool(env, "TASTYTRADE_DRY_RUN", True)
+    )
+    alpaca_live_route = (
+        "alpaca" in {stock_broker, options_broker}
+        and not _env_bool(env, "ALPACA_PAPER", True)
+    )
+    live_requested = tastytrade_live_route or alpaca_live_route
+    can_place_live_orders = bool(live_requested and live_confirmed and not trading_halted)
+    return {
+        "live_confirmed": live_confirmed,
+        "trading_halted": trading_halted,
+        "trading_halt_reason": (env.get("TRADING_HALTED_REASON") or "").strip(),
+        "max_positions": _env_int(env, "MAX_POSITIONS", "MAX_OPEN_POSITIONS", default=10),
+        "max_dollars_per_trade": _env_float(env, "MAX_DOLLARS_PER_TRADE", "MAX_DOLLAR_RISK", default=50.0),
+        "live_requested": live_requested,
+        "can_place_live_orders": can_place_live_orders,
+        "message": (
+            "Live order placement is enabled."
+            if can_place_live_orders
+            else "Live order placement is blocked by sandbox, dry-run, paper, halt, or confirmation settings."
+        ),
+    }
+
+
+def _broker_mode_labels(env: dict, stock_broker: str, options_broker: str, safety: dict) -> list[str]:
+    labels = [(env.get("ENVIRONMENT_NAME") or "dev").strip().upper() or "DEV"]
+    if "tastytrade" in {stock_broker, options_broker}:
+        labels.append("TASTYTRADE SANDBOX" if _env_bool(env, "TASTYTRADE_IS_TEST", False) else "TASTYTRADE PROD")
+        labels.append("DRY RUN" if _env_bool(env, "TASTYTRADE_DRY_RUN", True) else "ORDER SUBMIT")
+    if "alpaca" in {stock_broker, options_broker}:
+        labels.append("ALPACA PAPER" if _env_bool(env, "ALPACA_PAPER", True) else "ALPACA LIVE")
+    labels.append("LIVE ENABLED" if safety["can_place_live_orders"] else "LIVE BLOCKED")
+    if options_broker == "tastytrade" and _env_bool(env, "ENABLE_TASTYTRADE_OPTIONS", True):
+        labels.append("OPTIONS ENABLED")
+    return labels
 
 
 def _activity_time(value: object) -> datetime:
@@ -617,6 +780,39 @@ def api_save_config():
                 "message": f"Configuration saved locally. Azure sync failed: {azure_result['error']}",
                 "azure_error": azure_result["error"],
             })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/api/broker/status", methods=["GET"])
+def api_broker_status():
+    """Return broker routing, credential mode, and live-trading safety status."""
+    try:
+        env = read_env()
+        environment_name = (env.get("ENVIRONMENT_NAME") or "dev").strip().lower()
+        if environment_name not in {"dev", "prod"}:
+            environment_name = "dev"
+        stock_broker = (env.get("STOCK_BROKER") or env.get("ORDER_BROKER") or "alpaca").strip().lower()
+        options_broker = (env.get("OPTIONS_BROKER") or env.get("ORDER_BROKER") or "tastytrade").strip().lower()
+        trade_urls = _trade_endpoint_urls()
+        safety = _safety_status(env, stock_broker, options_broker)
+        return jsonify({
+            "status": "ok",
+            "environment_name": environment_name,
+            "mode_labels": _broker_mode_labels(env, stock_broker, options_broker, safety),
+            "routing": {
+                "stock_broker": stock_broker,
+                "options_broker": options_broker,
+                "stock_endpoint": trade_urls.get("stock", ""),
+                "options_endpoint": trade_urls.get("options", ""),
+                "deployed_git_branch": (env.get("DEPLOYED_GIT_BRANCH") or "").strip(),
+                "deployed_git_sha": (env.get("DEPLOYED_GIT_SHA") or "").strip(),
+                "deployed_at_utc": (env.get("DEPLOYED_AT_UTC") or "").strip(),
+            },
+            "tastytrade": _tastytrade_status(env, stock_broker, options_broker),
+            "alpaca": _alpaca_status(env, stock_broker, options_broker),
+            "safety": safety,
+        })
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 

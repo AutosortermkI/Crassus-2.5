@@ -530,40 +530,130 @@
     // ------------------------------------------------------------------
     // API: Broker Status
     // ------------------------------------------------------------------
+    function statusPill(text, status) {
+        const normalized = String(status || '').toLowerCase();
+        const klass = normalized === 'ok' || normalized === 'connected' || normalized === 'enabled'
+            ? 'status-success'
+            : (normalized === 'missing' || normalized === 'blocked' || normalized === 'warning' ? 'status-warning' : 'status-error');
+        return `<span class="status-pill ${klass}">${esc(text)}</span>`;
+    }
+
+    function modePill(label) {
+        const text = String(label || '');
+        const upper = text.toUpperCase();
+        let klass = 'status-info';
+        if (upper.includes('LIVE ENABLED') || upper.includes('ORDER SUBMIT')) klass = 'status-error';
+        if (upper.includes('LIVE BLOCKED') || upper.includes('DRY RUN') || upper.includes('SANDBOX')) klass = 'status-warning';
+        if (upper.includes('OPTIONS ENABLED')) klass = 'status-success';
+        return `<span class="status-pill ${klass}">${esc(text)}</span>`;
+    }
+
+    function detailRows(rows) {
+        return rows.map(([label, value]) => `
+            <div class="broker-detail-row">
+                <span>${esc(label)}</span>
+                <strong>${esc(value === undefined || value === null || value === '' ? '-' : value)}</strong>
+            </div>
+        `).join('');
+    }
+
+    function renderBrokerStatus(data) {
+        const env = String(data.environment_name || 'dev').toLowerCase() === 'prod' ? 'prod' : 'dev';
+        const envBadge = document.getElementById('environmentBadge');
+        envBadge.textContent = env.toUpperCase();
+        envBadge.className = 'badge ' + (env === 'prod' ? 'badge-live' : 'badge-paper');
+
+        const labels = data.mode_labels || [];
+        document.getElementById('brokerModeLabels').innerHTML = labels.map(modePill).join('');
+
+        const summary = document.getElementById('brokerModeSummary');
+        const safety = data.safety || {};
+        summary.textContent = safety.can_place_live_orders ? 'Live Orders Enabled' : 'Live Orders Blocked';
+        summary.className = 'status-pill ' + (safety.can_place_live_orders ? 'status-error' : 'status-warning');
+
+        const tradingBadge = document.getElementById('tradingBadge');
+        if (safety.can_place_live_orders) {
+            tradingBadge.textContent = 'Live Enabled';
+            tradingBadge.className = 'badge badge-live';
+        } else if (labels.some(label => String(label).toUpperCase().includes('DRY RUN'))) {
+            tradingBadge.textContent = 'Dry Run';
+            tradingBadge.className = 'badge badge-paper';
+        } else {
+            tradingBadge.textContent = 'Live Blocked';
+            tradingBadge.className = 'badge badge-neutral';
+        }
+
+        const routing = data.routing || {};
+        document.querySelector('#brokerRoutingCard .broker-card-body').innerHTML = detailRows([
+            ['Stock / Shares', routing.stock_broker],
+            ['Options', routing.options_broker],
+            ['Stock Endpoint', routing.stock_endpoint],
+            ['Options Endpoint', routing.options_endpoint],
+            ['Branch', routing.deployed_git_branch],
+            ['Commit', routing.deployed_git_sha],
+        ]);
+
+        const tasty = data.tastytrade || {};
+        document.querySelector('#brokerTastytradeCard .broker-card-body').innerHTML =
+            statusPill(tasty.status || 'missing', tasty.status) +
+            detailRows([
+                ['Role', tasty.role],
+                ['Account', tasty.account_number],
+                ['API Mode', tasty.is_test ? 'Cert/Sandbox' : 'Production'],
+                ['Dry Run', tasty.dry_run ? 'ON' : 'OFF'],
+                ['Options', tasty.options_enabled ? 'Enabled' : 'Disabled'],
+                ['Verified', tasty.last_verified_at ? formatDate(tasty.last_verified_at) : '-'],
+                ['Message', tasty.mode_warning || tasty.message],
+            ]);
+
+        const alpaca = data.alpaca || {};
+        document.querySelector('#brokerAlpacaCard .broker-card-body').innerHTML =
+            statusPill(alpaca.status || 'missing', alpaca.status) +
+            detailRows([
+                ['Role', alpaca.role],
+                ['Account', alpaca.account_id],
+                ['Mode', alpaca.paper ? 'Paper' : 'Live'],
+                ['Verified', alpaca.last_verified_at ? formatDate(alpaca.last_verified_at) : '-'],
+                ['Message', alpaca.message],
+            ]);
+
+        document.querySelector('#brokerSafetyCard .broker-card-body').innerHTML =
+            statusPill(safety.can_place_live_orders ? 'enabled' : 'blocked', safety.can_place_live_orders ? 'enabled' : 'blocked') +
+            detailRows([
+                ['Live Confirmed', safety.live_confirmed ? 'YES' : 'NO'],
+                ['Trading Halted', safety.trading_halted ? 'YES' : 'NO'],
+                ['Max Positions', safety.max_positions],
+                ['Max $ / Trade', fmtDollar(safety.max_dollars_per_trade)],
+                ['Message', safety.message],
+            ]);
+
+        const statusBox = document.getElementById('brokerStatus');
+        if (tasty.status === 'ok') {
+            statusBox.innerHTML = '<span class="status-pill status-success">Connected</span> ' +
+                'Tastytrade account ' + esc(tasty.account_number || '-') +
+                ' · ' + esc(tasty.is_test ? 'Cert/Sandbox' : 'Production') +
+                (tasty.dry_run ? ' · Dry Run' : '');
+        } else {
+            statusBox.textContent = tasty.message || 'Tastytrade credentials are not verified.';
+        }
+    }
+
     function loadBrokerStatus() {
-        fetch('/api/credentials/check')
+        fetch('/api/broker/status')
             .then(r => r.json())
             .then(data => {
-                const statusBox = document.getElementById('brokerStatus');
-                const badge = document.getElementById('tradingBadge');
-
-                if (data.status === 'ok') {
-                    const broker = data.broker === 'tastytrade' ? 'Tastytrade' : 'Alpaca';
-                    const mode = data.paper
-                        ? (data.broker === 'tastytrade' ? 'Cert/Sandbox' : 'Paper')
-                        : (data.broker === 'tastytrade' ? 'Production' : 'Live');
-                    const dryRun = data.dry_run ? ' · Dry Run' : '';
-                    statusBox.innerHTML = '<span class="status-pill status-success">Connected</span> ' +
-                        esc(broker) + ' account ' + esc(data.account_id) + ' · ' + esc(mode + dryRun);
-                    if (data.dry_run) {
-                        badge.textContent = 'Dry Run Mode';
-                        badge.className = 'badge badge-paper';
-                    } else {
-                        badge.textContent = data.paper ? 'Broker Test Mode' : 'Live Trading';
-                        badge.className = 'badge ' + (data.paper ? 'badge-paper' : 'badge-live');
-                    }
-                } else if (data.status === 'missing') {
-                    statusBox.textContent = 'No Tastytrade credentials configured. Webhook monitoring is still active.';
-                    badge.textContent = 'Webhook Ready';
-                    badge.className = 'badge badge-neutral';
-                } else {
-                    statusBox.textContent = data.message || 'Broker credentials present but not verified.';
-                    badge.textContent = 'Broker Attention';
-                    badge.className = 'badge badge-neutral';
-                }
+                if (data.status !== 'ok') throw new Error(data.message || 'Could not load broker status');
+                renderBrokerStatus(data);
             })
-            .catch(() => {
+            .catch(err => {
                 document.getElementById('brokerStatus').textContent = 'Could not check broker status.';
+                document.getElementById('brokerModeLabels').innerHTML = modePill('STATUS UNAVAILABLE');
+                document.getElementById('brokerModeSummary').textContent = 'Unavailable';
+                document.getElementById('brokerModeSummary').className = 'status-pill status-error';
+                ['brokerRoutingCard', 'brokerTastytradeCard', 'brokerAlpacaCard', 'brokerSafetyCard'].forEach(id => {
+                    const body = document.querySelector('#' + id + ' .broker-card-body');
+                    if (body) body.textContent = err.message;
+                });
             });
     }
 

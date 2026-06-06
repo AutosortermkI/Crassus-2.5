@@ -38,6 +38,40 @@
 
         <div class="layout-main-side">
             <div class="stack">
+                <!-- Broker Control Center -->
+                <div class="card" id="brokerControlCenter">
+                    <div class="card-header">
+                        <h2>
+                            Broker Control Center
+                            <span id="brokerModeSummary" class="status-pill status-warning">Loading...</span>
+                        </h2>
+                    </div>
+                    <p class="card-description">
+                        Execution mode, broker routing, and safety gates are shown separately so sandbox, dry-run, and live settings are not confused.
+                    </p>
+                    <div id="brokerModeLabels" class="broker-mode-labels">
+                        <span class="status-pill status-warning">Loading mode</span>
+                    </div>
+                    <div class="broker-control-grid">
+                        <div class="broker-control-card" id="brokerRoutingCard">
+                            <div class="broker-card-title">Routing</div>
+                            <div class="broker-card-body">Loading routing state...</div>
+                        </div>
+                        <div class="broker-control-card" id="brokerTastytradeCard">
+                            <div class="broker-card-title">Tastytrade Credentials</div>
+                            <div class="broker-card-body">Checking Tastytrade...</div>
+                        </div>
+                        <div class="broker-control-card" id="brokerAlpacaCard">
+                            <div class="broker-card-title">Alpaca</div>
+                            <div class="broker-card-body">Checking Alpaca...</div>
+                        </div>
+                        <div class="broker-control-card" id="brokerSafetyCard">
+                            <div class="broker-card-title">Safety</div>
+                            <div class="broker-card-body">Checking safety gates...</div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Webhook Inbox -->
                 <div class="card">
                     <div class="card-header">
@@ -167,7 +201,7 @@
                 <!-- Broker Connection -->
                 <div class="card">
                     <div class="card-header">
-                        <h2>Broker Connection</h2>
+                        <h2>Tastytrade Credentials</h2>
                     </div>
                     <p class="card-description">
                         Connect Tastytrade for stock OTOCO execution, portfolio data, positions, and order history.
