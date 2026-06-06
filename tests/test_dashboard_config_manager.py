@@ -317,3 +317,62 @@ def test_resolve_broker_sync_targets_uses_prod_apps_for_prod_dashboard(tmp_path,
     assert targets["options_function"] == "prod-options"
     assert targets["dashboard"] == "prod-dashboard"
     assert "dev" not in " ".join(targets.values())
+
+
+def test_sync_settings_to_azure_updates_split_function_apps_and_dashboard(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "ENVIRONMENT_NAME=dev\n"
+        "AZURE_RESOURCE_GROUP=CRG\n"
+        "AZURE_USE_KEY_VAULT=false\n"
+        "AZURE_DEV_STOCK_FUNCTION_APP_NAME=dev-stock\n"
+        "AZURE_DEV_OPTIONS_FUNCTION_APP_NAME=dev-options\n"
+        "AZURE_DEV_DASHBOARD_APP_NAME=dev-dashboard\n"
+    )
+
+    monkeypatch.setattr(config_manager, "ENV_PATH", env_path)
+    monkeypatch.delenv("WEBSITE_SITE_NAME", raising=False)
+    monkeypatch.setattr(
+        config_manager,
+        "_sync_settings_with_management_api",
+        lambda *_args, **_kwargs: {"ok": True},
+    )
+    monkeypatch.setattr(
+        config_manager,
+        "_sync_settings_with_cli",
+        lambda *_args, **_kwargs: {"ok": True},
+    )
+    calls = []
+
+    def fake_sync_one(kind, app_name, resource_group, updates):
+        calls.append((kind, app_name, resource_group, dict(updates)))
+        return "ok"
+
+    monkeypatch.setattr(config_manager, "_sync_one_app_setting", fake_sync_one)
+
+    result = config_manager.sync_settings_to_azure({
+        "WEBHOOK_AUTH_TOKEN": "token-123",
+        "TASTYTRADE_ACCOUNT_NUMBER": "5WT12345",
+    })
+
+    assert result == {"ok": True}
+    assert calls == [
+        (
+            "function",
+            "dev-stock",
+            "CRG",
+            {"WEBHOOK_AUTH_TOKEN": "token-123", "TASTYTRADE_ACCOUNT_NUMBER": "5WT12345"},
+        ),
+        (
+            "function",
+            "dev-options",
+            "CRG",
+            {"WEBHOOK_AUTH_TOKEN": "token-123", "TASTYTRADE_ACCOUNT_NUMBER": "5WT12345"},
+        ),
+        (
+            "webapp",
+            "dev-dashboard",
+            "CRG",
+            {"WEBHOOK_AUTH_TOKEN": "token-123", "TASTYTRADE_ACCOUNT_NUMBER": "5WT12345"},
+        ),
+    ]

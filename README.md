@@ -636,6 +636,7 @@ All variables are configurable via the dashboard UI or directly in `.env`.
 | `OPTIONS_WEBHOOK_AUTH_TOKEN` | Optional options route token; falls back to `WEBHOOK_AUTH_TOKEN` |
 
 The Azure deployment itself does not require Tastytrade credentials in local `.env`. If they are missing, deployment continues with safe test/dry-run defaults; the hosted dashboard will show broker credentials as missing until you enter them there.
+When credentials or webhook tokens are entered in the hosted dashboard, the dashboard syncs those settings to the current environment's stock Function App, options Function App, and dashboard Web App. Dev sync targets `crassus-dev-stock`, `crassus-dev-options`, and `crassus-dev-dashboard` by default; production keeps the original `crassus-25` Function App URL with split routes unless explicitly reconfigured.
 
 ### Optional (with defaults)
 

@@ -99,6 +99,8 @@ The dashboard Broker Routing section can switch:
 
 These dropdowns change routing only. They do not alter `ALPACA_PAPER`, `TASTYTRADE_IS_TEST`, `TASTYTRADE_DRY_RUN`, `ENABLE_TASTYTRADE_OPTIONS`, `LIVE_TRADING_CONFIRMED`, trading halts, daily loss settings, or max position settings.
 
+Dashboard credential and webhook-token saves follow the same environment target resolution as the split webhook URLs. A dev dashboard syncs to the dev stock Function App, dev options Function App, and dev dashboard Web App; production syncs to the production Function App/dashboard targets.
+
 ## Safety Rules
 
 - Broker selection never enables live trading by itself.
