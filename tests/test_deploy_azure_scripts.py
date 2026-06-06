@@ -6,13 +6,20 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 
 def test_unix_deploy_allows_dashboard_first_tastytrade_setup():
     script = (ROOT_DIR / "deploy_azure.sh").read_text()
+    dashboard_settings_block = script.split("DASHBOARD_SETTINGS=(", 1)[1].split(")\n", 1)[0]
 
     assert 'touch "$ENV_FILE"' in script
     assert "Tastytrade credentials are not set locally" in script
+    assert "local -n" not in script
     assert "TASTYTRADE_IS_TEST=${TASTYTRADE_IS_TEST:-false}" in script
     assert "TASTYTRADE_DRY_RUN=${TASTYTRADE_DRY_RUN:-true}" in script
     assert 'upsert_env_var "TASTYTRADE_IS_TEST" "$TASTYTRADE_IS_TEST"' in script
     assert 'upsert_env_var "TASTYTRADE_DRY_RUN" "$TASTYTRADE_DRY_RUN"' in script
+    assert 'COMMON_FUNCTION_SETTINGS+=("TASTYTRADE_IS_TEST=$TASTYTRADE_IS_TEST")' in script
+    assert '"ORDER_BROKER=$ORDER_BROKER"' in dashboard_settings_block
+    assert '"TASTYTRADE_IS_TEST=$TASTYTRADE_IS_TEST"' in dashboard_settings_block
+    assert '"TASTYTRADE_DRY_RUN=$TASTYTRADE_DRY_RUN"' in dashboard_settings_block
+    assert 'DASHBOARD_SETTINGS+=("AZURE_SUBSCRIPTION_ID=$AZURE_SUBSCRIPTION_ID")' in script
     assert (
         "TASTYTRADE_ACCOUNT_NUMBER, TASTYTRADE_CLIENT_SECRET, "
         "and TASTYTRADE_REFRESH_TOKEN must be set in .env"
