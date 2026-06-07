@@ -817,7 +817,14 @@ def save_config(updates: dict, allow_secret_keys: bool = False) -> None:
     Args:
         updates: dict of {key: new_value} to write.
     """
-    if not _can_persist_local_env():
+    can_persist_local_env = _can_persist_local_env()
+    if os.environ.get("WEBSITE_SITE_NAME") or not can_persist_local_env:
+        for key, value in updates.items():
+            if key in SECRET_KEYS and not allow_secret_keys:
+                continue
+            os.environ[key] = str(value)
+
+    if not can_persist_local_env:
         return
     ensure_env_file()
     # Read existing lines

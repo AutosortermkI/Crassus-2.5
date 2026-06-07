@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 import sys
 
@@ -242,6 +243,15 @@ def test_save_tastytrade_credentials_writes_secret_and_nonsecret_fields(tmp_path
     assert "TASTYTRADE_REFRESH_TOKEN=refresh-token" in saved
     assert "TASTYTRADE_IS_TEST=true" in saved
     assert "TASTYTRADE_DRY_RUN=true" in saved
+
+
+def test_save_config_updates_runtime_environment_when_file_cannot_be_persisted(monkeypatch):
+    monkeypatch.setattr(config_manager, "_can_persist_local_env", lambda: False)
+    monkeypatch.delenv("TASTYTRADE_ACCOUNT_NUMBER", raising=False)
+
+    config_manager.save_config({"TASTYTRADE_ACCOUNT_NUMBER": "5WT12345"})
+
+    assert os.environ["TASTYTRADE_ACCOUNT_NUMBER"] == "5WT12345"
 
 
 def test_prepare_azure_app_settings_hashes_plain_dashboard_password():

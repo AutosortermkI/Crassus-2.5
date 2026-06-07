@@ -790,8 +790,9 @@ def api_credentials_save():
             account_number = (data.get("account_number") or "").strip()
             client_secret = (data.get("client_secret") or "").strip()
             refresh_token = (data.get("refresh_token") or "").strip()
-            is_test = _json_bool(data, "is_test", True)
-            dry_run = _json_bool(data, "dry_run", True)
+            env = read_env()
+            is_test = _json_bool(data, "is_test", _env_bool(env, "TASTYTRADE_IS_TEST", False))
+            dry_run = _json_bool(data, "dry_run", _env_bool(env, "TASTYTRADE_DRY_RUN", True))
 
             if not account_number or not client_secret or not refresh_token:
                 return jsonify({

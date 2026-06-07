@@ -126,6 +126,56 @@ def test_credentials_save_verifies_submitted_tastytrade_values_before_azure_sync
     legacy_verify.assert_not_called()
 
 
+def test_credentials_save_uses_configured_tastytrade_api_mode_when_payload_omits_it(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "ORDER_BROKER=tastytrade\n"
+        "TASTYTRADE_IS_TEST=false\n"
+        "TASTYTRADE_DRY_RUN=false\n"
+    )
+    monkeypatch.setattr(config_manager, "ENV_PATH", env_path)
+    monkeypatch.delenv("WEBSITE_SITE_NAME", raising=False)
+
+    module = _load_app_module("dashboard_app_tastytrade_default_mode_test")
+    submitted_verify = MagicMock(
+        return_value={"ok": True, "account_id": "5WT12345", "paper": False, "dry_run": False}
+    )
+    save_creds = MagicMock()
+    sync = MagicMock(return_value={"ok": True})
+    monkeypatch.setattr(module, "tt_verify_credentials_with_values", submitted_verify)
+    monkeypatch.setattr(module, "save_tastytrade_credentials", save_creds)
+    monkeypatch.setattr(module, "sync_settings_to_azure", sync)
+
+    response = module.app.test_client().post(
+        "/api/credentials/save",
+        json={
+            "broker": "tastytrade",
+            "account_number": "5WT12345",
+            "client_secret": "client-secret",
+            "refresh_token": "refresh-token",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["status"] == "ok"
+    submitted_verify.assert_called_once_with(
+        account_number="5WT12345",
+        client_secret="client-secret",
+        refresh_token="refresh-token",
+        is_test=False,
+    )
+    save_creds.assert_called_once_with(
+        "5WT12345",
+        "client-secret",
+        "refresh-token",
+        is_test=False,
+        dry_run=False,
+    )
+    synced = sync.call_args.args[0]
+    assert synced["TASTYTRADE_IS_TEST"] == "false"
+    assert synced["TASTYTRADE_DRY_RUN"] == "false"
+
+
 def test_credentials_save_failure_names_tastytrade_api_mode(tmp_path, monkeypatch):
     env_path = tmp_path / ".env"
     env_path.write_text("ORDER_BROKER=tastytrade\n")

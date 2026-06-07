@@ -22,6 +22,29 @@ def test_dashboard_js_applies_tastytrade_mode_from_config():
     assert "TASTYTRADE_DRY_RUN" in js
 
 
+def test_dashboard_js_syncs_landing_account_field_from_config():
+    js = (ROOT_DIR / "dashboard" / "static" / "js" / "dashboard.js").read_text()
+
+    assert "setupAccountNumber" in js
+    assert "TASTYTRADE_ACCOUNT_NUMBER" in js
+    assert "setSetupInputValue('setupAccountNumber'" in js
+
+
+def test_dashboard_js_refreshes_config_after_tastytrade_credential_save():
+    js = (ROOT_DIR / "dashboard" / "static" / "js" / "dashboard.js").read_text()
+    success_block = js[js.index("function submitCredentials()"):js.index("function loadPortfolio()")]
+
+    assert "loadConfig()" in success_block
+
+
+def test_dashboard_js_reconciles_landing_card_after_settings_save():
+    js = (ROOT_DIR / "dashboard" / "static" / "js" / "dashboard.js").read_text()
+    success_block = js[js.index("function saveConfig()"):js.index("function init()")]
+
+    assert "mergeConfigUpdates(updates)" in success_block
+    assert "applyTastytradeSetupDefaults(configData)" in success_block
+
+
 def test_dashboard_has_broker_control_center_cards():
     html = (ROOT_DIR / "dashboard" / "templates" / "index.html").read_text()
 

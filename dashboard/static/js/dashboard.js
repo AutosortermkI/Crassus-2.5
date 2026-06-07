@@ -234,7 +234,29 @@
         return String(value).toLowerCase() === 'true';
     }
 
+    function configValue(config, key, fallback = '') {
+        const entry = config && config[key];
+        const value = entry ? entry.value : null;
+        if (value === null || value === undefined) return fallback;
+        return String(value);
+    }
+
+    function setSetupInputValue(inputId, value) {
+        const input = document.getElementById(inputId);
+        if (!input || document.activeElement === input) return;
+        input.value = value || '';
+    }
+
+    function mergeConfigUpdates(updates) {
+        for (const [key, value] of Object.entries(updates || {})) {
+            if (configData[key]) {
+                configData[key].value = String(value ?? '');
+            }
+        }
+    }
+
     function applyTastytradeSetupDefaults(config) {
+        setSetupInputValue('setupAccountNumber', configValue(config, 'TASTYTRADE_ACCOUNT_NUMBER', ''));
         setSetupToggleState(
             'setupTestToggle',
             'setupTestLabel',
@@ -785,6 +807,13 @@
         .then(data => {
             if (data.status !== 'ok') throw new Error(data.message || 'Could not save credentials');
             showToast('Tastytrade credentials saved and verified', 'success');
+            mergeConfigUpdates({
+                TASTYTRADE_ACCOUNT_NUMBER: accountNumber,
+                TASTYTRADE_IS_TEST: isTest ? 'true' : 'false',
+                TASTYTRADE_DRY_RUN: dryRun ? 'true' : 'false',
+            });
+            applyTastytradeSetupDefaults(configData);
+            loadConfig();
             loadBrokerStatus();
             loadCombinedDashboard();
         })
@@ -1101,6 +1130,8 @@
             } else {
                 showToast('Settings saved', 'success');
             }
+            mergeConfigUpdates(updates);
+            applyTastytradeSetupDefaults(configData);
             loadWebhookInfo();
             loadWebhookActivity();
             loadBrokerStatus();
