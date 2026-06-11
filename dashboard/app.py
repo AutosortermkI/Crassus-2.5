@@ -666,7 +666,7 @@ def require_dashboard_login():
     if not _dashboard_auth_enabled():
         return None
 
-    if request.endpoint in {"login", "logout", "static", "api_webhook_receive"}:
+    if request.endpoint in {"login", "logout", "static", "health", "api_webhook_receive"}:
         return None
 
     if _dashboard_is_authenticated():
