@@ -58,6 +58,30 @@ def test_dashboard_has_broker_control_center_cards():
     assert "Tastytrade Credentials" in html
 
 
+def test_dashboard_has_dedicated_alpaca_credential_card():
+    html = (ROOT_DIR / "dashboard" / "templates" / "index.html").read_text()
+
+    assert "Alpaca Credentials" in html
+    assert 'id="alpacaCredentialStatus"' in html
+    assert 'id="alpacaApiKey"' in html
+    assert 'id="alpacaSecretKey"' in html
+    assert 'id="alpacaPaperToggle"' in html
+    assert 'id="alpacaConnectBtn"' in html
+    assert "submitAlpacaCredentials()" in html
+
+
+def test_dashboard_js_saves_alpaca_credentials_through_broker_payload():
+    js = (ROOT_DIR / "dashboard" / "static" / "js" / "dashboard.js").read_text()
+
+    assert "function submitAlpacaCredentials()" in js
+    assert "broker: 'alpaca'" in js
+    assert "api_key: apiKey" in js
+    assert "secret_key: secretKey" in js
+    assert "ALPACA_PAPER" in js
+    assert "applyAlpacaSetupDefaults(configData)" in js
+    assert "window.submitAlpacaCredentials = submitAlpacaCredentials" in js
+
+
 def test_dashboard_js_loads_combined_broker_status():
     js = (ROOT_DIR / "dashboard" / "static" / "js" / "dashboard.js").read_text()
 

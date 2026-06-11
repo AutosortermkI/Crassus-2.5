@@ -254,6 +254,19 @@ def test_save_config_updates_runtime_environment_when_file_cannot_be_persisted(m
     assert os.environ["TASTYTRADE_ACCOUNT_NUMBER"] == "5WT12345"
 
 
+def test_save_alpaca_credentials_updates_runtime_environment_when_file_cannot_be_persisted(monkeypatch):
+    monkeypatch.setattr(config_manager, "_can_persist_local_env", lambda: False)
+    monkeypatch.delenv("ALPACA_API_KEY", raising=False)
+    monkeypatch.delenv("ALPACA_SECRET_KEY", raising=False)
+    monkeypatch.delenv("ALPACA_PAPER", raising=False)
+
+    config_manager.save_credentials("alpaca-key", "alpaca-secret", paper=True)
+
+    assert os.environ["ALPACA_API_KEY"] == "alpaca-key"
+    assert os.environ["ALPACA_SECRET_KEY"] == "alpaca-secret"
+    assert os.environ["ALPACA_PAPER"] == "true"
+
+
 def test_prepare_azure_app_settings_hashes_plain_dashboard_password():
     settings = {
         "use_key_vault": False,

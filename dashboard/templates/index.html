@@ -254,6 +254,46 @@
                     </div>
                 </div>
 
+                <!-- Alpaca Connection -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Alpaca Credentials</h2>
+                    </div>
+                    <p class="card-description">
+                        Connect Alpaca for stock/share routing and broker snapshot data. Credentials sync to Azure and remain available after dashboard restarts.
+                    </p>
+
+                    <div id="alpacaCredentialStatus" class="status-box" style="margin-bottom: 14px;">
+                        Alpaca credential status follows the Broker Control Center above.
+                    </div>
+
+                    <div class="field-row">
+                        <label for="alpacaApiKey">API Key</label>
+                        <input class="input" type="password" id="alpacaApiKey" placeholder="Alpaca API key" autocomplete="off" spellcheck="false">
+                    </div>
+
+                    <div class="field-row">
+                        <label for="alpacaSecretKey">Secret Key</label>
+                        <input class="input" type="password" id="alpacaSecretKey" placeholder="Alpaca secret key" autocomplete="off" spellcheck="false">
+                    </div>
+
+                    <div class="field-row">
+                        <label>Paper Trading</label>
+                        <div class="toggle-wrap">
+                            <span id="alpacaPaperLabel">ON</span>
+                            <div id="alpacaPaperToggle" class="toggle active"
+                                 role="switch" aria-checked="true" aria-label="Alpaca Paper Trading"
+                                 tabindex="0" onclick="toggleAlpacaPaperMode()"
+                                 onkeydown="if(event.key===' '||event.key==='Enter'){event.preventDefault();toggleAlpacaPaperMode()}"></div>
+                        </div>
+                        <div class="field-help">Leave ON for Alpaca paper trading. Turning OFF uses live Alpaca credentials and remains blocked unless live-trading gates are explicitly enabled.</div>
+                    </div>
+
+                    <div class="button-row">
+                        <button class="btn btn-secondary" id="alpacaConnectBtn" onclick="submitAlpacaCredentials()">Save & Verify Alpaca</button>
+                    </div>
+                </div>
+
                 <!-- Recent Alerts -->
                 <div class="card">
                     <div class="card-header">

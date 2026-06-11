@@ -213,6 +213,85 @@ def test_credentials_save_failure_names_tastytrade_api_mode(tmp_path, monkeypatc
     module.sync_settings_to_azure.assert_not_called()
 
 
+def test_credentials_save_verifies_submitted_alpaca_values_before_azure_sync(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text("ORDER_BROKER=alpaca\nALPACA_PAPER=true\n")
+    monkeypatch.setattr(config_manager, "ENV_PATH", env_path)
+    monkeypatch.delenv("WEBSITE_SITE_NAME", raising=False)
+
+    module = _load_app_module("dashboard_app_alpaca_direct_verify_test")
+    submitted_verify = MagicMock(return_value={"ok": True, "account_id": "alpaca-123", "paper": True})
+    legacy_verify = MagicMock(side_effect=AssertionError("should verify submitted Alpaca credentials directly"))
+    save_creds = MagicMock()
+    sync = MagicMock(return_value={"ok": True})
+    monkeypatch.setattr(module, "alpaca_verify_credentials_with_values", submitted_verify, raising=False)
+    monkeypatch.setattr(module, "verify_credentials", legacy_verify)
+    monkeypatch.setattr(module, "save_credentials", save_creds)
+    monkeypatch.setattr(module, "sync_settings_to_azure", sync)
+
+    response = module.app.test_client().post(
+        "/api/credentials/save",
+        json={
+            "broker": "alpaca",
+            "api_key": "alpaca-key",
+            "secret_key": "alpaca-secret",
+            "paper": True,
+        },
+    )
+    body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["status"] == "ok"
+    assert body["broker"] == "alpaca"
+    submitted_verify.assert_called_once_with(
+        api_key="alpaca-key",
+        secret_key="alpaca-secret",
+        paper=True,
+    )
+    legacy_verify.assert_not_called()
+    save_creds.assert_called_once_with("alpaca-key", "alpaca-secret", paper=True)
+    sync.assert_called_once_with({
+        "ALPACA_API_KEY": "alpaca-key",
+        "ALPACA_SECRET_KEY": "alpaca-secret",
+        "ALPACA_PAPER": "true",
+    })
+
+
+def test_credentials_save_does_not_persist_invalid_alpaca_values(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text("ORDER_BROKER=alpaca\n")
+    monkeypatch.setattr(config_manager, "ENV_PATH", env_path)
+    monkeypatch.delenv("WEBSITE_SITE_NAME", raising=False)
+
+    module = _load_app_module("dashboard_app_alpaca_invalid_direct_verify_test")
+    monkeypatch.setattr(
+        module,
+        "alpaca_verify_credentials_with_values",
+        MagicMock(return_value={"ok": False, "error": "invalid key"}),
+        raising=False,
+    )
+    monkeypatch.setattr(module, "save_credentials", MagicMock())
+    monkeypatch.setattr(module, "sync_settings_to_azure", MagicMock())
+
+    response = module.app.test_client().post(
+        "/api/credentials/save",
+        json={
+            "broker": "alpaca",
+            "api_key": "bad-key",
+            "secret_key": "bad-secret",
+            "paper": True,
+        },
+    )
+    body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["status"] == "invalid"
+    assert body["broker"] == "alpaca"
+    assert "invalid key" in body["message"]
+    module.save_credentials.assert_not_called()
+    module.sync_settings_to_azure.assert_not_called()
+
+
 def test_config_brokers_saves_valid_values_and_syncs_without_live_flags(tmp_path, monkeypatch):
     env_path = tmp_path / ".env"
     env_path.write_text(

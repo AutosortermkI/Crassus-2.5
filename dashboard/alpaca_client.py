@@ -37,6 +37,15 @@ def verify_credentials() -> dict:
     if not api_key or not secret_key:
         return {"ok": False, "error": "API key and secret key are required."}
     paper = env.get("ALPACA_PAPER", "true").lower() == "true"
+    return verify_credentials_with_values(api_key=api_key, secret_key=secret_key, paper=paper)
+
+
+def verify_credentials_with_values(api_key: str, secret_key: str, paper: bool = True) -> dict:
+    """Test submitted Alpaca credentials without relying on saved environment state."""
+    api_key = (api_key or "").strip()
+    secret_key = (secret_key or "").strip()
+    if not api_key or not secret_key:
+        return {"ok": False, "error": "API key and secret key are required."}
     try:
         client = TradingClient(api_key, secret_key, paper=paper)
         account = client.get_account()

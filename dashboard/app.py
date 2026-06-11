@@ -38,6 +38,7 @@ from config_manager import (
 from alpaca_client import (
     get_account_summary, get_positions, get_recent_orders,
     has_credentials, verify_credentials,
+    verify_credentials_with_values as alpaca_verify_credentials_with_values,
 )
 from tastytrade_client import (
     get_account_summary as tt_get_account_summary,
@@ -852,20 +853,23 @@ def api_credentials_save():
 
         api_key = (data.get("api_key") or "").strip()
         secret_key = (data.get("secret_key") or "").strip()
-        paper = data.get("paper", True)
+        env = read_env()
+        paper = _json_bool(data, "paper", _env_bool(env, "ALPACA_PAPER", True))
 
         if not api_key or not secret_key:
             return jsonify({
                 "status": "error",
+                "broker": "alpaca",
                 "message": "API Key and Secret Key are required.",
             }), 400
 
-        # Save first so verify_credentials() picks them up
-        save_credentials(api_key, secret_key, paper=paper)
-
-        # Verify they actually work
-        result = verify_credentials()
+        result = alpaca_verify_credentials_with_values(
+            api_key=api_key,
+            secret_key=secret_key,
+            paper=paper,
+        )
         if result["ok"]:
+            save_credentials(api_key, secret_key, paper=paper)
             # Also sync credentials to Azure
             azure_result = sync_settings_to_azure({
                 "ALPACA_API_KEY": api_key,
@@ -885,7 +889,8 @@ def api_credentials_save():
         else:
             return jsonify({
                 "status": "invalid",
-                "message": "Saved, but authentication failed: " + result["error"],
+                "broker": "alpaca",
+                "message": f"Alpaca verification failed before saving: {result['error']}",
             })
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500

@@ -218,6 +218,13 @@
             toggle.classList.contains('active') ? 'ON' : 'OFF';
     }
 
+    function toggleAlpacaPaperMode() {
+        const toggle = document.getElementById('alpacaPaperToggle');
+        toggle.classList.toggle('active');
+        document.getElementById('alpacaPaperLabel').textContent =
+            toggle.classList.contains('active') ? 'ON' : 'OFF';
+    }
+
     function setSetupToggleState(toggleId, labelId, active) {
         const toggle = document.getElementById(toggleId);
         const label = document.getElementById(labelId);
@@ -266,6 +273,14 @@
             'setupDryRunToggle',
             'setupDryRunLabel',
             configBool(config, 'TASTYTRADE_DRY_RUN', true)
+        );
+    }
+
+    function applyAlpacaSetupDefaults(config) {
+        setSetupToggleState(
+            'alpacaPaperToggle',
+            'alpacaPaperLabel',
+            configBool(config, 'ALPACA_PAPER', true)
         );
     }
 
@@ -639,6 +654,17 @@
                 ['Message', alpaca.message],
             ]);
 
+        const alpacaStatusBox = document.getElementById('alpacaCredentialStatus');
+        if (alpacaStatusBox) {
+            if (alpaca.status === 'ok') {
+                alpacaStatusBox.innerHTML = '<span class="status-pill status-success">Connected</span> ' +
+                    'Alpaca account ' + esc(alpaca.account_id || '-') +
+                    ' · ' + esc(alpaca.paper ? 'Paper' : 'Live');
+            } else {
+                alpacaStatusBox.textContent = alpaca.message || 'Alpaca credentials are not verified.';
+            }
+        }
+
         document.querySelector('#brokerSafetyCard .broker-card-body').innerHTML =
             statusPill(safety.can_place_live_orders ? 'enabled' : 'blocked', safety.can_place_live_orders ? 'enabled' : 'blocked') +
             detailRows([
@@ -824,6 +850,49 @@
         });
     }
 
+    function submitAlpacaCredentials() {
+        const btn = document.getElementById('alpacaConnectBtn');
+        const apiKey = document.getElementById('alpacaApiKey').value.trim();
+        const secretKey = document.getElementById('alpacaSecretKey').value.trim();
+        const paper = document.getElementById('alpacaPaperToggle').classList.contains('active');
+
+        if (!apiKey || !secretKey) {
+            showToast('Alpaca API key and secret key are required.', 'error');
+            return;
+        }
+
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner"></span> Verifying...';
+
+        fetch('/api/credentials/save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                broker: 'alpaca',
+                api_key: apiKey,
+                secret_key: secretKey,
+                paper: paper,
+            }),
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status !== 'ok') throw new Error(data.message || 'Could not save Alpaca credentials');
+            showToast('Alpaca credentials saved and verified', 'success');
+            mergeConfigUpdates({ ALPACA_PAPER: paper ? 'true' : 'false' });
+            applyAlpacaSetupDefaults(configData);
+            document.getElementById('alpacaApiKey').value = '';
+            document.getElementById('alpacaSecretKey').value = '';
+            loadConfig();
+            loadBrokerStatus();
+            loadCombinedDashboard();
+        })
+        .catch(err => showToast(err.message, 'error'))
+        .finally(() => {
+            btn.disabled = false;
+            btn.textContent = 'Save & Verify Alpaca';
+        });
+    }
+
     // ------------------------------------------------------------------
     // API: Portfolio
     // ------------------------------------------------------------------
@@ -936,6 +1005,7 @@
                 if (data.status !== 'ok') throw new Error(data.message || 'Could not load config');
                 configData = data.config;
                 applyTastytradeSetupDefaults(configData);
+                applyAlpacaSetupDefaults(configData);
                 renderConfig(configData);
             })
             .catch(err => {
@@ -1157,6 +1227,9 @@
         document.getElementById('setupRefreshToken').addEventListener('keydown', e => {
             if (e.key === 'Enter') submitCredentials();
         });
+        document.getElementById('alpacaSecretKey').addEventListener('keydown', e => {
+            if (e.key === 'Enter') submitAlpacaCredentials();
+        });
 
         const searchInput = document.getElementById('configSearch');
         if (searchInput) {
@@ -1180,11 +1253,13 @@
     window.copyToClipboard = copyToClipboard;
     window.toggleTastytradeTestMode = toggleTastytradeTestMode;
     window.toggleTastytradeDryRun = toggleTastytradeDryRun;
+    window.toggleAlpacaPaperMode = toggleAlpacaPaperMode;
     window.setTemplate = setTemplate;
     window.generateToken = generateToken;
     window.testWebhook = testWebhook;
     window.clearWebhooks = clearWebhooks;
     window.submitCredentials = submitCredentials;
+    window.submitAlpacaCredentials = submitAlpacaCredentials;
     window.saveConfig = saveConfig;
     window.saveBrokerRouting = saveBrokerRouting;
 
