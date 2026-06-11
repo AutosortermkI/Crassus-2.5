@@ -51,7 +51,10 @@ def test_dashboard_startup_only_starts_built_app():
     assert "pip install" not in script
     assert "requirements-dashboard.txt" not in script
     assert ".python_packages/lib/site-packages" not in script
-    assert 'APP_ROOT="${APP_ROOT:-$(pwd)}"' in script
+    assert 'APP_ROOT="${APP_ROOT:-$SCRIPT_DIR}"' in script
+    assert 'APP_ROOT="${APP_ROOT:-$(pwd)}"' not in script
+    assert 'cd "$APP_ROOT"' in script
+    assert 'PYTHONPATH="$APP_ROOT:$APP_ROOT/dashboard:$APP_ROOT/function_app:${PYTHONPATH:-}"' in script
     assert 'exec python -m gunicorn' in script
 
 
