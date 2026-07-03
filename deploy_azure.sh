@@ -322,7 +322,7 @@ AZURE_SUBSCRIPTION_ID="$(load_env_var "AZURE_SUBSCRIPTION_ID")"
 
 if [ -z "$WEBHOOK_AUTH_TOKEN" ]; then
     WEBHOOK_AUTH_TOKEN="$(python3 -c "import secrets; print(secrets.token_hex(16))")"
-    echo "[INFO] Auto-generated WEBHOOK_AUTH_TOKEN: $WEBHOOK_AUTH_TOKEN"
+    echo "[INFO] Auto-generated WEBHOOK_AUTH_TOKEN and saved it to .env."
     upsert_env_var "WEBHOOK_AUTH_TOKEN" "$WEBHOOK_AUTH_TOKEN"
 fi
 STOCK_WEBHOOK_AUTH_TOKEN="${STOCK_WEBHOOK_AUTH_TOKEN:-$WEBHOOK_AUTH_TOKEN}"
@@ -659,10 +659,13 @@ echo "Dashboard:"
 echo "$DASHBOARD_BASE_URL"
 echo
 echo "Stock/share TradingView webhook:"
-echo "${STOCK_FUNCTION_BASE_URL}/api/trade-stock?token=${STOCK_WEBHOOK_AUTH_TOKEN}"
+echo "${STOCK_FUNCTION_BASE_URL}/api/trade-stock"
+echo "Token omitted from deploy output; use the dashboard Webhooks tab or append the configured token out of band."
 echo
 echo "Options TradingView webhook:"
-echo "${OPTIONS_FUNCTION_BASE_URL}/api/trade-options?token=${OPTIONS_WEBHOOK_AUTH_TOKEN}"
+echo "${OPTIONS_FUNCTION_BASE_URL}/api/trade-options"
+echo "Token omitted from deploy output; use the dashboard Webhooks tab or append the configured token out of band."
 echo
 echo "Legacy webhook, if retained:"
-echo "${STOCK_FUNCTION_BASE_URL}/api/trade?token=${WEBHOOK_AUTH_TOKEN}"
+echo "${STOCK_FUNCTION_BASE_URL}/api/trade"
+echo "Token omitted from deploy output."

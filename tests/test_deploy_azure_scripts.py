@@ -113,8 +113,12 @@ def test_unix_deploy_resolves_split_app_names_and_routes():
     assert "ENABLE_STOCK_TRADING=true" in script
     assert "ENABLE_OPTIONS_TRADING=true" in script
     assert "AzureWebJobsFeatureFlags=EnableWorkerIndexing" in script
-    assert "/api/trade-stock?token=" in script
-    assert "/api/trade-options?token=" in script
+    assert 'echo "${STOCK_FUNCTION_BASE_URL}/api/trade-stock"' in script
+    assert 'echo "${OPTIONS_FUNCTION_BASE_URL}/api/trade-options"' in script
+    assert "?token=${STOCK_WEBHOOK_AUTH_TOKEN}" not in script
+    assert "?token=${OPTIONS_WEBHOOK_AUTH_TOKEN}" not in script
+    assert "?token=${WEBHOOK_AUTH_TOKEN}" not in script
+    assert "Auto-generated WEBHOOK_AUTH_TOKEN:" not in script
 
 
 def test_unix_deploy_defaults_to_broker_native_exits_with_timers_disabled():

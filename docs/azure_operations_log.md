@@ -25,6 +25,7 @@ Branch: `jeremy/current-prod-dev-no-timers`
   - Tastytrade explicit-contract option OTOCO orders on the options route.
 - Do not create new production Function Apps during this cleanup; production remains `crassus-25` with split routes.
 - Do not recreate deleted staging resources.
+- Keep webhook authentication enabled, but redact webhook tokens from deployment output.
 
 ### Cost Finding
 
