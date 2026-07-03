@@ -1,18 +1,17 @@
 """
 Crassus 2.5 -- Options contract screening and selection.
 
-Queries Alpaca's options API for available contracts on an underlying symbol
-and selects the best contract based on configurable criteria:
+Queries Tastytrade's option-chain and market-data APIs for available contracts
+on an underlying symbol and selects the best contract based on configurable
+criteria:
 
   - Days to expiration (DTE) window
   - Delta-based filtering via Black-Scholes Greeks (greeks.py)
   - Liquidity filters (open interest, volume, bid-ask spread)
   - Price range constraints
 
-When Yahoo Finance is enabled (``YAHOO_ENABLED=true``), the screener uses
-Yahoo for richer market data (bid/ask/IV/volume) and computes real Greeks
-for delta-based contract selection.  When Yahoo is unavailable, it falls
-back to Alpaca-only screening with moneyness as a delta proxy.
+``OPTIONS_DATA_SOURCE`` defaults to ``tastytrade``. Yahoo and Alpaca screening
+are retained only for explicit fallback or diagnostic use.
 
 Extension points:
   - Plug in IV rank / percentile filtering
@@ -39,6 +38,8 @@ from greeks import (
     OptionGreeks,
 )
 from utils import log_structured, get_logger
+from tastytrade_orders import get_tastytrade_client
+from tastytrade_market_data import get_option_chain as get_tastytrade_option_chain
 
 logger = get_logger(__name__)
 
@@ -156,6 +157,137 @@ def _compute_candidate_score(
         + 0.20 * spread_score
         + 0.10 * iv_score
     )
+
+
+# ---------------------------------------------------------------------------
+# Tastytrade screening
+# ---------------------------------------------------------------------------
+
+def _screen_tastytrade(
+    tastytrade_client,
+    underlying: str,
+    side: str,
+    entry_price: float,
+    criteria: ScreeningCriteria,
+    correlation_id: str = "",
+) -> SelectedContract:
+    """Screen options using Tastytrade option-chain and market-data endpoints."""
+    contract_type = "call" if side == "buy" else "put"
+    risk_free_rate = DEFAULT_RISK_FREE_RATE
+    target_delta = (criteria.delta_min + criteria.delta_max) / 2.0
+    today = date.today()
+
+    log_structured(
+        logger, logging.INFO,
+        "Screening options via Tastytrade market data",
+        correlation_id,
+        underlying=underlying,
+        type=contract_type,
+    )
+
+    chain = get_tastytrade_option_chain(tastytrade_client, underlying, correlation_id)
+    candidates: List[dict] = []
+
+    for contract in chain.contracts:
+        if contract.option_type != contract_type:
+            continue
+
+        dte = (contract.expiration - today).days
+        if dte < criteria.dte_min or dte > criteria.dte_max:
+            continue
+
+        price = contract.last_price
+        if price <= 0:
+            continue
+        if price < criteria.min_price or price > criteria.max_price:
+            continue
+
+        if contract.open_interest < criteria.min_open_interest:
+            continue
+        if contract.volume < criteria.min_volume:
+            continue
+
+        spread_pct = None
+        if contract.bid > 0 and contract.ask > 0:
+            mid = (contract.bid + contract.ask) / 2.0
+            if mid > 0:
+                spread_pct = ((contract.ask - contract.bid) / mid) * 100.0
+                if spread_pct > criteria.max_spread_pct:
+                    continue
+
+        dte_years = dte / 365.0
+        iv = contract.implied_volatility
+        if iv <= 0:
+            iv = implied_volatility(
+                market_price=price,
+                underlying_price=entry_price,
+                strike=contract.strike,
+                dte_years=dte_years,
+                risk_free_rate=risk_free_rate,
+                option_type=contract_type,
+            )
+
+        delta = None
+        if iv is not None and not math.isnan(iv) and iv > 0:
+            delta = compute_delta(
+                underlying_price=entry_price,
+                strike=contract.strike,
+                dte_years=dte_years,
+                risk_free_rate=risk_free_rate,
+                sigma=iv,
+                option_type=contract_type,
+            )
+            if abs(delta) < criteria.delta_min or abs(delta) > criteria.delta_max:
+                continue
+
+        score = _compute_candidate_score(
+            delta=delta,
+            target_delta=target_delta,
+            oi=contract.open_interest,
+            spread_pct=spread_pct,
+            iv=iv if (iv is not None and not math.isnan(iv)) else None,
+        )
+        candidates.append({
+            "symbol": contract.contract_symbol,
+            "strike": contract.strike,
+            "dte": dte,
+            "expiration": contract.expiration,
+            "premium": price,
+            "oi": contract.open_interest,
+            "delta": delta,
+            "score": score,
+        })
+
+    if not candidates:
+        raise NoContractFoundError(
+            f"No {contract_type} contracts for {underlying} passed Tastytrade filters"
+        )
+
+    candidates.sort(key=lambda c: c["score"])
+    best = candidates[0]
+    selected = SelectedContract(
+        symbol=best["symbol"],
+        underlying=underlying,
+        expiration=best["expiration"],
+        strike=best["strike"],
+        contract_type=contract_type,
+        premium=best["premium"],
+        open_interest=best["oi"],
+        dte=best["dte"],
+    )
+
+    log_structured(
+        logger, logging.INFO,
+        "Selected contract via Tastytrade market data",
+        correlation_id,
+        contract=selected.symbol,
+        strike=selected.strike,
+        dte=selected.dte,
+        premium=selected.premium,
+        oi=selected.open_interest,
+        delta=best.get("delta"),
+    )
+    return selected
 
 
 # ---------------------------------------------------------------------------
@@ -553,7 +685,7 @@ def _screen_alpaca_only(
 
 
 # ---------------------------------------------------------------------------
-# Main entry point (with Yahoo fallback)
+# Main entry point
 # ---------------------------------------------------------------------------
 
 def screen_option_contracts(
@@ -566,9 +698,9 @@ def screen_option_contracts(
 ) -> SelectedContract:
     """Find the best options contract for the given signal.
 
-    When ``YAHOO_ENABLED=true`` (default), uses Yahoo Finance for
-    richer market data and real Greeks computation.  Falls back to
-    Alpaca-only screening if Yahoo is disabled or unavailable.
+    By default, uses Tastytrade option-chain and market-data endpoints.
+    Yahoo and Alpaca data paths are retained for explicit fallback or
+    diagnostic use via ``OPTIONS_DATA_SOURCE``.
 
     Args:
         client: Authenticated Alpaca :class:`TradingClient`.
@@ -588,9 +720,31 @@ def screen_option_contracts(
     if criteria is None:
         criteria = get_screening_criteria()
 
-    yahoo_enabled = os.environ.get("YAHOO_ENABLED", "true").lower() == "true"
+    data_source = os.environ.get("OPTIONS_DATA_SOURCE", "tastytrade").strip().lower()
 
-    if yahoo_enabled:
+    if data_source in {"tastytrade", "tasty", "tt"}:
+        try:
+            return _screen_tastytrade(
+                tastytrade_client=get_tastytrade_client(),
+                underlying=underlying,
+                side=side,
+                entry_price=entry_price,
+                criteria=criteria,
+                correlation_id=correlation_id,
+            )
+        except NoContractFoundError:
+            raise
+        except Exception as e:
+            if os.environ.get("OPTIONS_ALLOW_DATA_FALLBACK_TO_ALPACA", "false").lower() != "true":
+                raise
+            log_structured(
+                logger, logging.WARNING,
+                f"Tastytrade screening failed, falling back to Alpaca-only: {e}",
+                correlation_id,
+                underlying=underlying,
+            )
+
+    if data_source == "yahoo":
         try:
             return screen_with_yahoo(
                 alpaca_client=client,
@@ -610,6 +764,9 @@ def screen_option_contracts(
                 correlation_id,
                 underlying=underlying,
             )
+
+    if data_source not in {"alpaca", "alpaca-only", "tastytrade", "tasty", "tt", "yahoo"}:
+        raise ValueError("OPTIONS_DATA_SOURCE must be 'tastytrade', 'yahoo', or 'alpaca'")
 
     return _screen_alpaca_only(
         client=client,

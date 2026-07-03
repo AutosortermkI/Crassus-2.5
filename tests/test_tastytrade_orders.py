@@ -174,6 +174,34 @@ def test_tastytrade_client_raises_api_error_with_response_detail():
     assert excinfo.value.status_code == 422
 
 
+def test_tastytrade_client_fetches_option_chain_and_market_data():
+    session = FakeSession(
+        responses=[
+            FakeResponse(200, {"access_token": "access-123", "expires_in": 900}),
+            FakeResponse(200, {"data": {"items": [{"underlying-symbol": "AAPL"}]}}),
+            FakeResponse(200, {"data": {"items": [{"symbol": "AAPL  260117C00190000"}]}}),
+        ]
+    )
+    client = TastytradeClient(
+        TastytradeConfig(
+            account_number="5WT12345",
+            client_secret="client-secret",
+            refresh_token="refresh-token",
+            is_test=True,
+        ),
+        session=session,
+    )
+
+    chain = client.get_nested_option_chain("aapl")
+    market_data = client.get_market_data_by_type(equity_options=["AAPL  260117C00190000"])
+
+    assert chain == {"items": [{"underlying-symbol": "AAPL"}]}
+    assert market_data == {"items": [{"symbol": "AAPL  260117C00190000"}]}
+    assert session.gets[0].url == "https://api.cert.tastyworks.com/option-chains/AAPL/nested"
+    assert session.gets[1].url == "https://api.cert.tastyworks.com/market-data/by-type"
+    assert session.gets[1].params == [("equity-option", "AAPL  260117C00190000")]
+
+
 def test_tastytrade_risk_helpers_use_balance_and_positions(monkeypatch):
     monkeypatch.setenv("MAX_OPEN_POSITIONS", "3")
     client = SimpleNamespace(

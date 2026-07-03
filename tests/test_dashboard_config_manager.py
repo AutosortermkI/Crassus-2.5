@@ -296,7 +296,7 @@ def test_get_config_exposes_split_broker_routing_defaults(tmp_path, monkeypatch)
     config = config_manager.get_config()
 
     assert config["ENVIRONMENT_NAME"]["value"] == "dev"
-    assert config["STOCK_BROKER"]["value"] == "tastytrade"
+    assert config["STOCK_BROKER"]["value"] == "alpaca"
     assert config["OPTIONS_BROKER"]["value"] == "tastytrade"
     assert config["ENABLE_TASTYTRADE_OPTIONS"]["value"] == "true"
 

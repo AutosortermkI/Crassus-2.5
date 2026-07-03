@@ -155,6 +155,15 @@ class TastytradeClient:
         )
         return _items(data)
 
+    def get_nested_option_chain(self, underlying: str) -> dict:
+        return self._get(f"/option-chains/{underlying.upper()}/nested")
+
+    def get_market_data_by_type(self, equity_options: Optional[list[str]] = None) -> Any:
+        params = []
+        for symbol in equity_options or []:
+            params.append(("equity-option", symbol))
+        return self._get("/market-data/by-type", params=params)
+
     def _post(self, path: str, payload: dict) -> dict:
         response = self.session.post(
             self._url(path),

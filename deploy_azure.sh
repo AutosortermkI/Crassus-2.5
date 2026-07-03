@@ -290,7 +290,7 @@ RESOURCE_GROUP="$(env_default "$(load_env_var "AZURE_RESOURCE_GROUP")" "$DEFAULT
 LOCATION="$(env_default "$(load_env_var "AZURE_LOCATION")" "$DEFAULT_LOCATION")"
 STORAGE_ACCOUNT="$(env_default "$(load_env_var "AZURE_STORAGE_ACCOUNT")" "$DEFAULT_STORAGE_ACCOUNT")"
 DASHBOARD_SKU="$(env_default "$(load_env_var "AZURE_DASHBOARD_SKU")" "$DEFAULT_DASHBOARD_SKU")"
-STOCK_BROKER="$(env_default "$(load_env_var "STOCK_BROKER")" "tastytrade")"
+STOCK_BROKER="$(env_default "$(load_env_var "STOCK_BROKER")" "alpaca")"
 OPTIONS_BROKER="$(env_default "$(load_env_var "OPTIONS_BROKER")" "tastytrade")"
 ORDER_BROKER="$(load_env_var "ORDER_BROKER")"
 
@@ -447,6 +447,8 @@ COMMON_FUNCTION_SETTINGS=(
     "MARKET_DATA_WATCHLIST=$MARKET_DATA_WATCHLIST"
     "MARKET_DATA_STALE_SECONDS=$MARKET_DATA_STALE_SECONDS"
     "AzureWebJobsFeatureFlags=EnableWorkerIndexing"
+    "AzureWebJobs.check_options_exits_timer.Disabled=true"
+    "AzureWebJobs.check_stock_orders_timer.Disabled=true"
     "SCM_DO_BUILD_DURING_DEPLOYMENT=true"
     "ENABLE_ORYX_BUILD=true"
     "DEPLOYED_GIT_BRANCH=$CURRENT_GIT_BRANCH"

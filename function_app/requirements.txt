@@ -9,7 +9,7 @@ alpaca-py>=0.14.0
 scipy>=1.11.0
 numpy>=1.24.0
 
-# Yahoo Finance HTTP client (direct API, not yfinance wrapper)
+# Tastytrade and legacy Yahoo HTTP clients
 requests>=2.31.0
 
 # Tastytrade DXLink market-data worker

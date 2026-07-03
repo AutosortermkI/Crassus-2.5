@@ -98,7 +98,7 @@ PARAM_DEFINITIONS = OrderedDict([
         "label": "Stock / Share Broker",
         "group": "Broker Routing",
         "type": "select",
-        "default": "tastytrade",
+        "default": "alpaca",
         "description": "Routes stock/share webhook orders to alpaca or tastytrade",
     }),
     ("OPTIONS_BROKER", {
@@ -141,7 +141,7 @@ PARAM_DEFINITIONS = OrderedDict([
         "group": "General Settings",
         "type": "bool",
         "default": "false",
-        "description": "Allows Alpaca options routing when OPTIONS_BROKER=tastytrade is not ready",
+        "description": "Allows explicit Alpaca options fallback when Tastytrade routing is unavailable",
     }),
     ("ALPACA_PAPER", {
         "label": "Paper Trading Mode",
@@ -592,12 +592,27 @@ PARAM_DEFINITIONS = OrderedDict([
         "default": "0.05",
         "description": "Annualized rate for Black-Scholes (e.g. 0.05 = 5%)",
     }),
+    ("OPTIONS_DATA_SOURCE", {
+        "label": "Options Data Source",
+        "group": "Risk & Data",
+        "type": "select",
+        "default": "tastytrade",
+        "options": ["tastytrade", "yahoo", "alpaca"],
+        "description": "Market-data source for options screening. Tastytrade is the default source for option chains and live quote fields",
+    }),
+    ("OPTIONS_ALLOW_DATA_FALLBACK_TO_ALPACA", {
+        "label": "Allow Alpaca Data Fallback",
+        "group": "Risk & Data",
+        "type": "bool",
+        "default": "false",
+        "description": "Allow options screening to fall back to Alpaca market data if Tastytrade data fails",
+    }),
     ("YAHOO_ENABLED", {
-        "label": "Yahoo Finance Enabled",
+        "label": "Yahoo Finance Enabled (Legacy)",
         "group": "Risk & Data",
         "type": "bool",
         "default": "true",
-        "description": "Use Yahoo Finance for richer options market data",
+        "description": "Legacy Yahoo options-data toggle. Use OPTIONS_DATA_SOURCE=yahoo for explicit Yahoo diagnostics",
     }),
     ("YAHOO_RETRY_COUNT", {
         "label": "Yahoo Retry Count",

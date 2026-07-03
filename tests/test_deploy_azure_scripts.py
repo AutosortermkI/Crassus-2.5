@@ -1,3 +1,5 @@
+import json
+import re
 from pathlib import Path
 
 
@@ -115,6 +117,16 @@ def test_unix_deploy_resolves_split_app_names_and_routes():
     assert "/api/trade-options?token=" in script
 
 
+def test_unix_deploy_defaults_to_broker_native_exits_with_timers_disabled():
+    script = (ROOT_DIR / "deploy_azure.sh").read_text()
+    common_settings_block = script.split("COMMON_FUNCTION_SETTINGS=(", 1)[1].split(")\n", 1)[0]
+
+    assert 'STOCK_BROKER="$(env_default "$(load_env_var "STOCK_BROKER")" "alpaca")"' in script
+    assert 'OPTIONS_BROKER="$(env_default "$(load_env_var "OPTIONS_BROKER")" "tastytrade")"' in script
+    assert '"AzureWebJobs.check_options_exits_timer.Disabled=true"' in common_settings_block
+    assert '"AzureWebJobs.check_stock_orders_timer.Disabled=true"' in common_settings_block
+
+
 def test_unix_deploy_supports_existing_dashboard_plan_and_quota_preflight():
     script = (ROOT_DIR / "deploy_azure.sh").read_text()
 
@@ -131,3 +143,15 @@ def test_windows_deploy_fails_clearly_for_split_profile_flags_until_parity_exist
 
     assert "Split dev/prod deployment is currently supported by deploy_azure.sh" in script
     assert "deploy_azure.bat needs parity updates before Windows deployment" in script
+
+
+def test_example_settings_are_timer_free_and_do_not_include_session_secret():
+    env_example = (ROOT_DIR / ".env.example").read_text()
+    local_settings = json.loads((ROOT_DIR / "function_app" / "local.settings.json.example").read_text())
+    values = local_settings["Values"]
+
+    assert "STOCK_BROKER=alpaca" in env_example
+    assert "OPTIONS_BROKER=tastytrade" in env_example
+    assert not re.search(r"^DASHBOARD_SESSION_SECRET=\\S+", env_example, re.MULTILINE)
+    assert values["AzureWebJobs.check_options_exits_timer.Disabled"] == "true"
+    assert values["AzureWebJobs.check_stock_orders_timer.Disabled"] == "true"

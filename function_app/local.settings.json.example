@@ -4,6 +4,8 @@
     "FUNCTIONS_WORKER_RUNTIME": "python",
     "AzureWebJobsFeatureFlags": "EnableWorkerIndexing",
     "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "AzureWebJobs.check_options_exits_timer.Disabled": "true",
+    "AzureWebJobs.check_stock_orders_timer.Disabled": "true",
     "ENVIRONMENT_NAME": "dev",
     "STOCK_BROKER": "alpaca",
     "OPTIONS_BROKER": "tastytrade",

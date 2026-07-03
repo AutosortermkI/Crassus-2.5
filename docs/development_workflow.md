@@ -28,9 +28,10 @@ Shared dev:
 
 Production:
 
-- Stock Function App: `crassus-prod-stock`
-- Options Function App: `crassus-prod-options`
-- Dashboard Web App: `crassus-prod-dashboard`
+- Function App: `crassus-25`
+  - Stock/share route: `/api/trade-stock`
+  - Options route: `/api/trade-options`
+- Dashboard Web App: `crassus-25-dashboard`
 
 Feature branches may deploy to DEV only. PROD may deploy from `main` only.
 
@@ -89,6 +90,7 @@ git push origin prod-YYYY-MM-DD
 - `/api/trade` is retained temporarily as a legacy route and returns a deprecation warning.
 - Dev and prod webhook URLs are different; copy the URL from the matching dashboard or deploy output.
 - The dashboard Webhooks tab should display separate stock/share and options URLs. In Azure mode it should point stock/share alerts at the stock Function App and options alerts at the options Function App, then merge activity from both apps in the Active Webhooks view.
+- Production keeps both split routes on `crassus-25` unless an explicit infrastructure change creates separate production Function Apps.
 
 ## Broker Routing Controls
 
@@ -106,8 +108,17 @@ Dashboard credential and webhook-token saves follow the same environment target 
 - Broker selection never enables live trading by itself.
 - Alpaca live trading requires `ALPACA_PAPER=false` and `LIVE_TRADING_CONFIRMED=yes`.
 - TastyTrade production trading requires `TASTYTRADE_IS_TEST=false`, `TASTYTRADE_DRY_RUN=false`, and `LIVE_TRADING_CONFIRMED=yes`.
-- TastyTrade options remain disabled by default with `ENABLE_TASTYTRADE_OPTIONS=false`.
+- TastyTrade options require explicit contract fields and still obey `TASTYTRADE_DRY_RUN`, `TASTYTRADE_IS_TEST`, and `LIVE_TRADING_CONFIRMED`.
 - Production deploy requires `main` and typing `DEPLOY PROD`.
+
+## Background Timers And Cost
+
+Azure deployments disable both timer-triggered monitor functions by default:
+
+- `AzureWebJobs.check_options_exits_timer.Disabled=true`
+- `AzureWebJobs.check_stock_orders_timer.Disabled=true`
+
+This keeps the Consumption-plan Function Apps from running idle every minute. Stock/share exits should come from Alpaca bracket orders. Options exits should come from Tastytrade OTOCO orders. Do not rely on the legacy Alpaca options exit monitor unless you intentionally re-enable the timer and accept the recurring Function execution cost.
 
 The deployment script sets `DEPLOYED_GIT_BRANCH`, `DEPLOYED_GIT_SHA`, and `DEPLOYED_AT_UTC` in Azure app settings so the dashboard can show what is currently deployed.
 

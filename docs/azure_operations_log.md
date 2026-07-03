@@ -2,6 +2,45 @@
 
 This file records deployment and resource-management decisions that matter for the live Crassus Azure estate. It intentionally omits secrets, account numbers, portfolio values, and broker credentials.
 
+## 2026-07-03 - Disable Timer Monitors And Standardize Broker-Native Exits
+
+Branch: `jeremy/current-prod-dev-no-timers`
+
+### Goal
+
+- Reduce Azure Functions Consumption-plan cost by disabling idle timer-triggered monitor Functions.
+- Keep `crassus-25` as the production Function App.
+- Keep shared dev split across `crassus-dev-stock` and `crassus-dev-options`.
+- Use Alpaca for stock/share bracket orders.
+- Use Tastytrade for explicit-contract options OTOCO orders.
+- Preserve webhook authentication, dashboard authentication, and deployed-branch metadata.
+
+### Decision
+
+- Deploy app settings that disable both timer-triggered monitor Functions:
+  - `AzureWebJobs.check_options_exits_timer.Disabled=true`
+  - `AzureWebJobs.check_stock_orders_timer.Disabled=true`
+- Rely on broker-native order structures for TP/SL exits:
+  - Alpaca stock/share bracket orders on the stock route.
+  - Tastytrade explicit-contract option OTOCO orders on the options route.
+- Do not create new production Function Apps during this cleanup; production remains `crassus-25` with split routes.
+- Do not recreate deleted staging resources.
+
+### Cost Finding
+
+June 2026 Cost Management data showed the main `CRG` charges were:
+
+- Azure Functions: about `$35.38`
+- Dashboard App Service B1 plan: about `$12.65`
+- Storage: about `$5.09`
+- Log Analytics: about `$0.47`
+
+The Function charges were consistent with idle timers running in three Function Apps. Each app was executing roughly 1,700 timer invocations per day.
+
+### Verification Targets
+
+After deployment, verify non-secret app settings on `crassus-25`, `crassus-dev-stock`, and `crassus-dev-options` show both timer disable flags as `true`, and verify `DEPLOYED_GIT_BRANCH`, `DEPLOYED_GIT_SHA`, and `DEPLOYED_AT_UTC` match the deployed source.
+
 ## 2026-05-30 - Preserve Old Dashboard URLs On B1
 
 Branch: `jeremy/split-stock-options-routing`

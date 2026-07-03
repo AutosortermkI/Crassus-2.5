@@ -1,6 +1,6 @@
 # Crassus 2.5
 
-Azure Function app that receives TradingView webhook alerts through split stock/options routes. Stock/share routing defaults to **Tastytrade** in dry-run mode, options routing defaults to **Tastytrade** with Tastytrade options disabled until contract-symbol routing is verified. Includes a local/hosted dashboard GUI for broker routing, Tastytrade credential setup, TradingView webhook configuration, portfolio monitoring, and strategy parameter tuning. Ships with a built-in **backtesting engine** for replaying historical data through the same strategy logic used in live trading.
+Azure Function app that receives TradingView webhook alerts through split stock/options routes. Stock/share routing defaults to **Alpaca** broker-native bracket orders; options routing defaults to **Tastytrade** explicit-contract OTOCO orders. Azure deployments disable timer-triggered exit/order monitors by default so take-profit and stop-loss behavior lives with the broker order, not a background polling Function. Includes a local/hosted dashboard GUI for broker routing, Tastytrade credential setup, TradingView webhook configuration, portfolio monitoring, and strategy parameter tuning. Ships with a built-in **backtesting engine** for replaying historical data through the same strategy logic used in live trading.
 
 ---
 
@@ -38,7 +38,7 @@ See [Development Workflow](docs/development_workflow.md) for the Jeremy/Joe bran
 - `main` is the last known good branch and the only production deploy source.
 - `jeremy/*` and `joe/*` branches may deploy to shared dev and must PR into `main`.
 - Shared dev uses separate stock, options, and dashboard Azure apps.
-- Production uses separate stock, options, and dashboard Azure apps.
+- Production uses the `crassus-25` Function App with split `/api/trade-stock` and `/api/trade-options` routes plus the `crassus-25-dashboard` Web App.
 - DEV deployments overwrite the shared dev environment. Coordinate before deploying.
 
 ```bash
@@ -140,16 +140,17 @@ TradingView sends JSON with a `content` multi-line string:
 
 ```
 function_app/
-├── function_app.py          # HTTP triggers (/api/trade-stock, /api/trade-options, legacy /api/trade) + timer trigger
+├── function_app.py          # HTTP triggers (/api/trade-stock, /api/trade-options, legacy /api/trade) + disabled timer definitions
 ├── parser.py                # Webhook content parsing (regex-based)
 ├── strategy.py              # Strategy config + TP/SL/stop-limit computation
-├── stock_orders.py          # Alpaca fallback stock bracket order submission
-├── tastytrade_orders.py     # Tastytrade OAuth, account checks, and stock OTOCO submission
-├── options_screener.py      # Options contract screening (Yahoo-first, Alpaca fallback)
-├── options_orders.py        # Options limit entry order submission
-├── exit_monitor.py          # Options exit monitoring (TP/SL target tracking + exit orders)
+├── stock_orders.py          # Alpaca stock/share bracket order submission
+├── tastytrade_orders.py     # Tastytrade OAuth, account checks, and OTOCO submission
+├── options_screener.py      # Options contract screening (Tastytrade data by default)
+├── options_orders.py        # Legacy Alpaca options limit entry order submission
+├── exit_monitor.py          # Legacy Alpaca fallback exit monitor; disabled in Azure deployments
 ├── risk.py                  # Risk sizing (fixed dollar; % equity planned)
 ├── greeks.py                # Black-Scholes Greeks (Delta/Gamma/Theta/Vega) + IV solver
+├── tastytrade_market_data.py # Tastytrade option-chain + quote data adapter
 ├── yahoo_client.py          # Yahoo Finance crumb/cookie client for market data
 ├── utils.py                 # Correlation ID, structured logging, rounding
 ├── host.json                # Azure Functions host config
@@ -231,18 +232,12 @@ TradingView alert fires
         │                       Day entry, GTC exits unless configured otherwise
         │
         └─ mode=options ──► Broker selected by OPTIONS_BROKER
-                             Tastytrade options are blocked with HTTP 501 by
-                             default until contract-symbol routing is verified
-                             Screen option contracts (Yahoo + Greeks)
-                             ► Risk-size qty from MAX_DOLLAR_RISK
-                             ► Submit limit entry order (DAY)
-                             ► Register TP/SL targets with exit monitor
-                                    │
-                                    ▼
-                             Timer trigger (every 60s)
-                             ► Check open positions vs targets
-                             ► Price >= TP → limit sell at TP
-                             ► Price <= SL → market sell (fast exit)
+                             Tastytrade explicit-contract path requires
+                             option_symbol (or contract fields) and premium
+                             ► Risk-size qty from MAX_DOLLAR_RISK unless qty
+                               is supplied
+                             ► Submit broker-native Tastytrade OTOCO order
+                               with entry, take-profit, and stop-loss legs
 ```
 
 ---
@@ -365,12 +360,12 @@ The simulated broker checks each OHLCV bar against pending orders:
 | **Stop** | `bar.high >= stop_price` | `bar.low <= stop_price` |
 | **Market** | Immediately at `bar.open` | Immediately at `bar.open` |
 
-**Stock bracket orders** model the same bracket lifecycle used by the live Tastytrade OTOCO path:
+**Stock bracket orders** model broker-native bracket lifecycle behavior:
 1. Entry limit order fills first
 2. TP and SL legs activate after entry fills
 3. When one exit leg fills, the other is automatically cancelled
 
-**Options orders** use the same exit monitor pattern as the live system: limit entry + monitored TP/SL targets with the 100x options multiplier.
+**Options orders** model broker-native exit behavior. The Tastytrade live path submits an OTOCO order with entry, TP, and SL legs; the legacy Alpaca fallback is not used for unattended timer-based exits in Azure.
 
 ### Metrics
 
@@ -480,22 +475,16 @@ Current status: Tastytrade options execution requires explicit contract fields i
 
 | Concern | Source | Why |
 |---|---|---|
-| **Market data** (bid/ask/IV/volume/OI) | Yahoo Finance | Richer options data than Alpaca's trading API |
-| **Greeks computation** | `greeks.py` (local) | Black-Scholes from Yahoo's IV or solved from market prices |
-| **Contract screening** | `options_screener.py` | Uses Yahoo data + Greeks for delta-based selection |
+| **Market data** (option chains, bid/ask/last, volume/OI/IV when returned) | Tastytrade | Uses Tastytrade option-chain and market-data APIs instead of Yahoo/YFinance or Alpaca option data |
+| **Greeks computation** | `greeks.py` (local) | Black-Scholes from Tastytrade IV when available, otherwise solved from market prices |
+| **Contract screening** | `options_screener.py` | Uses Tastytrade data + Greeks for delta-based selection |
 | **Order execution** | Tastytrade for explicit contracts | The Function builds a long-option OTOCO payload and sends it through Tastytrade dry-run/live endpoints according to `TASTYTRADE_DRY_RUN` |
 
-### Why no bracket orders for options?
+### Broker-native exits instead of timers
 
-Alpaca does **not** support bracket orders (`BRACKET` / `OCO` / `OTO`) for options contracts — the API returns an error. Therefore:
+The default options execution path is Tastytrade explicit-contract OTOCO. The Function computes the premium-based take-profit and stop-loss prices, then submits one broker-native complex order containing the opening option leg plus the TP and SL closing legs. Azure deployments disable `check_options_exits_timer` and `check_stock_orders_timer` so idle background Functions do not create recurring Consumption-plan execution cost.
 
-- **Entry:** Simple limit order with `TimeInForce.DAY`.
-- **Exit monitoring:** The `exit_monitor.py` module tracks TP/SL targets for every options entry. A **timer trigger** (`check_options_exits_timer`) runs every 60 seconds, checks current prices against targets, and submits exit orders automatically:
-  - **Take profit hit** → limit sell at TP price
-  - **Stop loss hit** → market sell (fast exit)
-  - **Position closed externally** → auto-cleans up stale targets
-
-Target persistence uses Azure Blob Storage in hosted deployments, with a local JSON fallback (`.options_targets.json`) for development.
+The legacy Alpaca options fallback remains in source for explicit fallback diagnostics, but Alpaca does not support option bracket orders. Do not use the Alpaca options fallback for unattended TP/SL management while timers are disabled.
 
 ### Risk sizing
 
@@ -507,21 +496,22 @@ Where `stop_distance = (stop_loss_pct / 100) × premium_price` and `× 100` is t
 
 ### Contract selection
 
-When Yahoo Finance is enabled (default), the screener:
+By default, the screener uses `OPTIONS_DATA_SOURCE=tastytrade`:
 
-1. **Fetches** option chains from Yahoo Finance (bid/ask/IV/volume/OI)
-2. **Computes** Greeks via `greeks.py` using Yahoo's IV data (or solves for IV from market prices)
-3. **Filters** candidates by:
+1. **Fetches** option chains from Tastytrade's nested option-chain endpoint.
+2. **Merges** Tastytrade market-data quote fields for each candidate option symbol.
+3. **Computes** Greeks via `greeks.py` using Tastytrade IV when available (or solves for IV from market prices).
+4. **Filters** candidates by:
    - **DTE window:** 14–45 days (configurable)
    - **Delta range:** 0.30–0.70 absolute delta (real Black-Scholes Greeks)
    - **Volume:** minimum daily volume
    - **Bid-ask spread:** max spread as % of mid price
    - **Open interest:** minimum OI threshold
    - **Price:** within configured min/max premium range
-4. **Scores** using composite ranking: delta proximity (40%), OI (30%), spread tightness (20%), IV (10%)
-5. **Maps** selected contract symbol to the Alpaca fallback path for order submission
+5. **Scores** using composite ranking: delta proximity (40%), OI (30%), spread tightness (20%), IV (10%).
+6. **Returns** the selected Tastytrade option symbol for the existing options order path.
 
-**Fallback:** If Yahoo is unavailable or disabled (`YAHOO_ENABLED=false`), the screener falls back to Alpaca-only data with IV solved from close prices.
+Yahoo and Alpaca option data paths remain available only when explicitly selected with `OPTIONS_DATA_SOURCE=yahoo` or `OPTIONS_DATA_SOURCE=alpaca`. Alpaca data fallback from the Tastytrade path requires `OPTIONS_ALLOW_DATA_FALLBACK_TO_ALPACA=true`.
 
 ### Greeks computation
 
@@ -534,7 +524,15 @@ When Yahoo Finance is enabled (default), the screener:
 - **Vega:** Price sensitivity per 1% IV move
 - **IV solver:** Brent's method (`scipy.optimize.brentq`) to solve for implied volatility from observed market prices
 
-### Yahoo Finance integration
+### Tastytrade market-data integration
+
+`tastytrade_market_data.py` provides the live options screening adapter:
+
+- Reads tradeable option symbols and streamer symbols from Tastytrade nested option chains
+- Fetches current market-data fields through Tastytrade's market-data API in 100-symbol batches
+- Returns Crassus-compatible contracts for the existing filtering, scoring, and risk logic
+
+### Legacy Yahoo Finance integration
 
 `yahoo_client.py` provides authenticated access to Yahoo Finance's options API:
 
@@ -560,8 +558,8 @@ This script:
 4. Aborts prod deploys unless the current branch is `main`.
 5. Requires typing `DEPLOY PROD` before deploying production.
 6. Warns that dev deploys overwrite the shared dev environment.
-7. Pushes stock-specific, options-specific, dashboard, and deployed-branch metadata app settings.
-8. Deploys the same `function_app` package to both Function Apps.
+7. Pushes stock-specific, options-specific, dashboard, deployed-branch metadata, and timer-disabled app settings.
+8. Deploys the same `function_app` package to the target Function App or Apps.
 9. Deploys the dashboard package and prints stock/options/legacy webhook URLs.
 
 The DXLink market-data code is deployed with the Function App package, but it is intended to run as a separate worker process such as an Azure WebJob or Container App. Do not run the long-lived websocket loop as an HTTP-triggered Consumption Function. Use `./run_market_data_worker.sh` as the worker startup command after setting `MARKET_DATA_WATCHLIST` and Tastytrade credentials.
@@ -581,9 +579,8 @@ The DXLink market-data code is deployed with the Function App package, but it is
 | DEV Stock Function App | `crassus-dev-stock` by default | Hosts `/api/trade-stock` in shared dev |
 | DEV Options Function App | `crassus-dev-options` by default | Hosts `/api/trade-options` in shared dev |
 | DEV Dashboard Web App | `crassus-dev-dashboard` by default | Shared dev dashboard |
-| PROD Stock Function App | `crassus-prod-stock` by default | Hosts `/api/trade-stock` in production |
-| PROD Options Function App | `crassus-prod-options` by default | Hosts `/api/trade-options` in production |
-| PROD Dashboard Web App | `crassus-prod-dashboard` by default | Production dashboard |
+| PROD Function App | `crassus-25` by default | Hosts `/api/trade-stock`, `/api/trade-options`, and legacy `/api/trade` in production |
+| PROD Dashboard Web App | `crassus-25-dashboard` by default | Production dashboard |
 | Dashboard App Service Plan | Derived from the dashboard app name by default | Hosts the shared Flask dashboard |
 
 ### Functions
@@ -593,7 +590,8 @@ The DXLink market-data code is deployed with the Function App package, but it is
 | `trade_stock` | HTTP POST `/api/trade-stock` | On-demand | Receives stock/share TradingView webhooks |
 | `trade_options` | HTTP POST `/api/trade-options` | On-demand | Receives options TradingView webhooks |
 | `trade` | HTTP POST `/api/trade` | On-demand | Legacy route that warns and routes by `mode` |
-| `check_options_exits_timer` | Timer | Every 60 seconds | Monitors options positions for TP/SL exits |
+| `check_options_exits_timer` | Timer | Disabled by deploy setting | Legacy Alpaca options fallback monitor; not used by the Tastytrade OTOCO path |
+| `check_stock_orders_timer` | Timer | Disabled by deploy setting | Legacy Alpaca order cleanup/logging monitor |
 
 ### Customizing resource names
 
@@ -609,9 +607,9 @@ AZURE_DEV_DASHBOARD_APP_NAME="crassus-dev-dashboard"
 AZURE_DEV_DASHBOARD_RESOURCE_GROUP=""
 AZURE_DEV_DASHBOARD_PLAN_RESOURCE_GROUP=""
 AZURE_DEV_DASHBOARD_PLAN_NAME=""
-AZURE_PROD_STOCK_FUNCTION_APP_NAME="crassus-prod-stock"
-AZURE_PROD_OPTIONS_FUNCTION_APP_NAME="crassus-prod-options"
-AZURE_PROD_DASHBOARD_APP_NAME="crassus-prod-dashboard"
+AZURE_PROD_STOCK_FUNCTION_APP_NAME="crassus-25"
+AZURE_PROD_OPTIONS_FUNCTION_APP_NAME="crassus-25"
+AZURE_PROD_DASHBOARD_APP_NAME="crassus-25-dashboard"
 AZURE_PROD_DASHBOARD_RESOURCE_GROUP=""
 AZURE_PROD_DASHBOARD_PLAN_RESOURCE_GROUP=""
 AZURE_PROD_DASHBOARD_PLAN_NAME=""
@@ -651,6 +649,8 @@ When credentials or webhook tokens are entered in the hosted dashboard, the dash
 | `TASTYTRADE_IS_TEST` | `false` | `true` = Tastytrade cert/test API for sandbox grants, `false` = production API for normal tastytrade OAuth grants |
 | `TASTYTRADE_DRY_RUN` | `true` | Validate stock and explicit-contract option OTOCO payloads with Tastytrade dry-run endpoints without routing live orders |
 | `ENABLE_TASTYTRADE_OPTIONS` | `true` | Allow Tastytrade options execution when alerts include explicit contract fields |
+| `AzureWebJobs.check_options_exits_timer.Disabled` | `true` in deployed apps | Disable the legacy options polling timer to keep Function costs down |
+| `AzureWebJobs.check_stock_orders_timer.Disabled` | `true` in deployed apps | Disable the legacy stock order polling timer to keep Function costs down |
 | `OPTIONS_ALLOW_FALLBACK_TO_ALPACA` | `false` | Allow explicit Alpaca fallback when options broker is Tastytrade |
 | `TASTYTRADE_ENTRY_TIME_IN_FORCE` | `Day` | Time-in-force for the opening OTOCO order |
 | `TASTYTRADE_EXIT_TIME_IN_FORCE` | `GTC` | Time-in-force for take-profit and stop exit orders |
@@ -725,9 +725,11 @@ When credentials or webhook tokens are entered in the hosted dashboard, the dash
 |---|---|---|
 | `RISK_FREE_RATE` | `0.05` | Annualized risk-free rate for Black-Scholes (5%) |
 | `MAX_DOLLAR_RISK` | `50.0` | Max $ risk per options trade |
-| `YAHOO_ENABLED` | `true` | Toggle Yahoo Finance as market data source |
-| `YAHOO_RETRY_COUNT` | `5` | Max retries for Yahoo API requests |
-| `YAHOO_BACKOFF_BASE` | `2` | Exponential backoff base (seconds) |
+| `OPTIONS_DATA_SOURCE` | `tastytrade` | Options screening data source: `tastytrade`, `yahoo`, or `alpaca` |
+| `OPTIONS_ALLOW_DATA_FALLBACK_TO_ALPACA` | `false` | Allow Alpaca data fallback if Tastytrade data fails; does not change execution broker or live-trading gates |
+| `YAHOO_ENABLED` | `true` | Legacy Yahoo toggle; use `OPTIONS_DATA_SOURCE=yahoo` for explicit Yahoo diagnostics |
+| `YAHOO_RETRY_COUNT` | `5` | Max retries for legacy Yahoo API requests |
+| `YAHOO_BACKOFF_BASE` | `2` | Legacy Yahoo exponential backoff base (seconds) |
 
 ---
 
@@ -783,7 +785,7 @@ curl -X POST http://localhost:7071/api/trade \
 | `alpaca-py` | Alpaca fallback Trading API and legacy options path |
 | `scipy` | `norm.cdf`/`norm.pdf` (Greeks), `brentq` (IV solver) |
 | `numpy` | Numerical computation |
-| `requests` | Yahoo Finance and Tastytrade HTTP client calls |
+| `requests` | Tastytrade and legacy Yahoo HTTP client calls |
 
 ### Dashboard (`requirements-dashboard.txt`)
 
@@ -797,7 +799,7 @@ curl -X POST http://localhost:7071/api/trade \
 | `azure-storage-blob` | Hosted paper-ledger and market-data cache continuity |
 | `gunicorn` | Production WSGI server for Azure App Service |
 
-> **Note:** Do NOT add `yfinance`. The direct API approach via `requests` + `YahooCrumbClient` is more reliable and avoids the heavy `yfinance` dependency tree.
+> **Note:** Do NOT add `yfinance`. Live options screening uses Tastytrade market-data APIs; the legacy Yahoo path remains direct `requests` code and avoids the heavy `yfinance` dependency tree.
 
 ---
 
