@@ -138,10 +138,19 @@ def test_unix_deploy_preserves_existing_azure_webhook_tokens_before_generating_n
     assert "preserve_secret_from_azure" in script
     assert "read_app_setting" in script
     assert "Preserving existing Azure app setting" in script
-    assert "WEBHOOK_AUTH_TOKEN=\"$(python3 -c" in preserve_block
-    assert preserve_block.index("preserve_secret_from_azure") < preserve_block.index("WEBHOOK_AUTH_TOKEN=\"$(python3 -c")
+    assert "WEBHOOK_AUTH_TOKEN=\"$(\"$PYTHON_BIN\" -c" in preserve_block
+    assert preserve_block.index("preserve_secret_from_azure") < preserve_block.index("WEBHOOK_AUTH_TOKEN=\"$(\"$PYTHON_BIN\" -c")
     assert "STOCK_WEBHOOK_AUTH_TOKEN=\"${STOCK_WEBHOOK_AUTH_TOKEN:-$WEBHOOK_AUTH_TOKEN}\"" in preserve_block
     assert "OPTIONS_WEBHOOK_AUTH_TOKEN=\"${OPTIONS_WEBHOOK_AUTH_TOKEN:-$WEBHOOK_AUTH_TOKEN}\"" in preserve_block
+
+
+def test_unix_deploy_accepts_python_or_python3_runtime():
+    script = (ROOT_DIR / "deploy_azure.sh").read_text()
+
+    assert 'PYTHON_BIN="python3"' in script
+    assert 'PYTHON_BIN="python"' in script
+    assert "Required command not found: python3 or python" in script
+    assert '"$PYTHON_BIN" - "$ENV_FILE" "$key" "$value"' in script
 
 
 def test_unix_deploy_supports_existing_dashboard_plan_and_quota_preflight():

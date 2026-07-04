@@ -46,12 +46,20 @@ if [ "$DEPLOY_ENV" != "dev" ] && [ "$DEPLOY_ENV" != "prod" ]; then
     exit 1
 fi
 
-for cmd in az func python3 git curl; do
+for cmd in az func git curl; do
     if ! command -v "$cmd" >/dev/null 2>&1; then
         echo "[ERROR] Required command not found: $cmd"
         exit 1
     fi
 done
+if command -v python3 >/dev/null 2>&1; then
+    PYTHON_BIN="python3"
+elif command -v python >/dev/null 2>&1; then
+    PYTHON_BIN="python"
+else
+    echo "[ERROR] Required command not found: python3 or python"
+    exit 1
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ENV_FILE="$SCRIPT_DIR/.env"
@@ -72,7 +80,7 @@ load_env_var() {
 upsert_env_var() {
     local key="$1"
     local value="$2"
-    python3 - "$ENV_FILE" "$key" "$value" <<'PY'
+    "$PYTHON_BIN" - "$ENV_FILE" "$key" "$value" <<'PY'
 from pathlib import Path
 import sys
 
@@ -158,7 +166,7 @@ preserve_secret_from_azure() {
 }
 
 current_utc() {
-    python3 - <<'PY'
+    "$PYTHON_BIN" - <<'PY'
 from datetime import datetime, timezone
 print(datetime.now(timezone.utc).isoformat())
 PY
@@ -166,7 +174,7 @@ PY
 
 create_dashboard_package() {
     local output_path="$1"
-    python3 - "$SCRIPT_DIR" "$output_path" <<'PY'
+    "$PYTHON_BIN" - "$SCRIPT_DIR" "$output_path" <<'PY'
 from pathlib import Path
 import sys
 import zipfile
@@ -489,7 +497,7 @@ preserve_secret_from_azure \
     webapp "$DASHBOARD_APP_NAME" "$DASHBOARD_RESOURCE_GROUP" OPTIONS_WEBHOOK_AUTH_TOKEN || true
 
 if [ -z "$WEBHOOK_AUTH_TOKEN" ]; then
-    WEBHOOK_AUTH_TOKEN="$(python3 -c "import secrets; print(secrets.token_hex(16))")"
+    WEBHOOK_AUTH_TOKEN="$("$PYTHON_BIN" -c "import secrets; print(secrets.token_hex(16))")"
     echo "[INFO] Auto-generated WEBHOOK_AUTH_TOKEN and saved it to .env."
     upsert_env_var "WEBHOOK_AUTH_TOKEN" "$WEBHOOK_AUTH_TOKEN"
 fi
