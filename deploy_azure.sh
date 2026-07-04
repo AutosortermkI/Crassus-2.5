@@ -165,6 +165,18 @@ preserve_secret_from_azure() {
     return 1
 }
 
+preserve_legacy_prod_secret_from_azure() {
+    local variable_name="$1"
+    local key="$2"
+    local current="${!variable_name:-}"
+
+    if [ "$DEPLOY_ENV" = "prod" ] && [ -n "${LEGACY_PROD_FUNCTION_APP_NAME:-}" ] && [ -z "$current" ]; then
+        preserve_secret_from_azure \
+            "$variable_name" \
+            functionapp "$LEGACY_PROD_FUNCTION_APP_NAME" "$RESOURCE_GROUP" "$key" || true
+    fi
+}
+
 current_utc() {
     "$PYTHON_BIN" - <<'PY'
 from datetime import datetime, timezone
@@ -417,9 +429,10 @@ upsert_env_var "MARKET_DATA_WATCHLIST" "$MARKET_DATA_WATCHLIST"
 upsert_env_var "MARKET_DATA_STALE_SECONDS" "$MARKET_DATA_STALE_SECONDS"
 
 if [ "$DEPLOY_ENV" = "prod" ]; then
-    STOCK_FUNCTION_APP_NAME="$(env_default "$(load_env_var "AZURE_PROD_STOCK_FUNCTION_APP_NAME")" "crassus-25")"
-    OPTIONS_FUNCTION_APP_NAME="$(env_default "$(load_env_var "AZURE_PROD_OPTIONS_FUNCTION_APP_NAME")" "crassus-25")"
+    STOCK_FUNCTION_APP_NAME="$(env_default "$(load_env_var "AZURE_PROD_STOCK_FUNCTION_APP_NAME")" "crassus-25-stock")"
+    OPTIONS_FUNCTION_APP_NAME="$(env_default "$(load_env_var "AZURE_PROD_OPTIONS_FUNCTION_APP_NAME")" "crassus-25-options")"
     DASHBOARD_APP_NAME="$(env_default "$(load_env_var "AZURE_PROD_DASHBOARD_APP_NAME")" "crassus-25-dashboard")"
+    LEGACY_PROD_FUNCTION_APP_NAME="$(env_default "$(load_env_var "AZURE_LEGACY_PROD_FUNCTION_APP_NAME")" "crassus-25")"
     DASHBOARD_RESOURCE_GROUP="$(env_default "$(load_env_var "AZURE_PROD_DASHBOARD_RESOURCE_GROUP")" "$(env_default "$(load_env_var "AZURE_DASHBOARD_RESOURCE_GROUP")" "$RESOURCE_GROUP")")"
     DASHBOARD_PLAN_RESOURCE_GROUP="$(env_default "$(load_env_var "AZURE_PROD_DASHBOARD_PLAN_RESOURCE_GROUP")" "$(env_default "$(load_env_var "AZURE_DASHBOARD_PLAN_RESOURCE_GROUP")" "$DASHBOARD_RESOURCE_GROUP")")"
     DASHBOARD_PLAN_NAME="$(env_default "$(load_env_var "AZURE_PROD_DASHBOARD_PLAN_NAME")" "$(env_default "$(load_env_var "AZURE_DASHBOARD_PLAN_NAME")" "${DASHBOARD_APP_NAME}-plan")")"
@@ -431,6 +444,7 @@ else
     STOCK_FUNCTION_APP_NAME="$(env_default "$(load_env_var "AZURE_DEV_STOCK_FUNCTION_APP_NAME")" "crassus-dev-stock")"
     OPTIONS_FUNCTION_APP_NAME="$(env_default "$(load_env_var "AZURE_DEV_OPTIONS_FUNCTION_APP_NAME")" "crassus-dev-options")"
     DASHBOARD_APP_NAME="$(env_default "$(load_env_var "AZURE_DEV_DASHBOARD_APP_NAME")" "crassus-dev-dashboard")"
+    LEGACY_PROD_FUNCTION_APP_NAME=""
     DASHBOARD_RESOURCE_GROUP="$(env_default "$(load_env_var "AZURE_DEV_DASHBOARD_RESOURCE_GROUP")" "$(env_default "$(load_env_var "AZURE_DASHBOARD_RESOURCE_GROUP")" "$RESOURCE_GROUP")")"
     DASHBOARD_PLAN_RESOURCE_GROUP="$(env_default "$(load_env_var "AZURE_DEV_DASHBOARD_PLAN_RESOURCE_GROUP")" "$(env_default "$(load_env_var "AZURE_DASHBOARD_PLAN_RESOURCE_GROUP")" "$DASHBOARD_RESOURCE_GROUP")")"
     DASHBOARD_PLAN_NAME="$(env_default "$(load_env_var "AZURE_DEV_DASHBOARD_PLAN_NAME")" "$(env_default "$(load_env_var "AZURE_DASHBOARD_PLAN_NAME")" "${DASHBOARD_APP_NAME}-plan")")"
@@ -495,6 +509,34 @@ preserve_secret_from_azure \
     OPTIONS_WEBHOOK_AUTH_TOKEN \
     functionapp "$OPTIONS_FUNCTION_APP_NAME" "$RESOURCE_GROUP" OPTIONS_WEBHOOK_AUTH_TOKEN \
     webapp "$DASHBOARD_APP_NAME" "$DASHBOARD_RESOURCE_GROUP" OPTIONS_WEBHOOK_AUTH_TOKEN || true
+preserve_secret_from_azure \
+    ALPACA_API_KEY \
+    functionapp "$STOCK_FUNCTION_APP_NAME" "$RESOURCE_GROUP" ALPACA_API_KEY \
+    webapp "$DASHBOARD_APP_NAME" "$DASHBOARD_RESOURCE_GROUP" ALPACA_API_KEY || true
+preserve_legacy_prod_secret_from_azure ALPACA_API_KEY ALPACA_API_KEY
+preserve_secret_from_azure \
+    ALPACA_SECRET_KEY \
+    functionapp "$STOCK_FUNCTION_APP_NAME" "$RESOURCE_GROUP" ALPACA_SECRET_KEY \
+    webapp "$DASHBOARD_APP_NAME" "$DASHBOARD_RESOURCE_GROUP" ALPACA_SECRET_KEY || true
+preserve_legacy_prod_secret_from_azure ALPACA_SECRET_KEY ALPACA_SECRET_KEY
+preserve_secret_from_azure \
+    TASTYTRADE_ACCOUNT_NUMBER \
+    functionapp "$OPTIONS_FUNCTION_APP_NAME" "$RESOURCE_GROUP" TASTYTRADE_ACCOUNT_NUMBER \
+    functionapp "$STOCK_FUNCTION_APP_NAME" "$RESOURCE_GROUP" TASTYTRADE_ACCOUNT_NUMBER \
+    webapp "$DASHBOARD_APP_NAME" "$DASHBOARD_RESOURCE_GROUP" TASTYTRADE_ACCOUNT_NUMBER || true
+preserve_legacy_prod_secret_from_azure TASTYTRADE_ACCOUNT_NUMBER TASTYTRADE_ACCOUNT_NUMBER
+preserve_secret_from_azure \
+    TASTYTRADE_CLIENT_SECRET \
+    functionapp "$OPTIONS_FUNCTION_APP_NAME" "$RESOURCE_GROUP" TASTYTRADE_CLIENT_SECRET \
+    functionapp "$STOCK_FUNCTION_APP_NAME" "$RESOURCE_GROUP" TASTYTRADE_CLIENT_SECRET \
+    webapp "$DASHBOARD_APP_NAME" "$DASHBOARD_RESOURCE_GROUP" TASTYTRADE_CLIENT_SECRET || true
+preserve_legacy_prod_secret_from_azure TASTYTRADE_CLIENT_SECRET TASTYTRADE_CLIENT_SECRET
+preserve_secret_from_azure \
+    TASTYTRADE_REFRESH_TOKEN \
+    functionapp "$OPTIONS_FUNCTION_APP_NAME" "$RESOURCE_GROUP" TASTYTRADE_REFRESH_TOKEN \
+    functionapp "$STOCK_FUNCTION_APP_NAME" "$RESOURCE_GROUP" TASTYTRADE_REFRESH_TOKEN \
+    webapp "$DASHBOARD_APP_NAME" "$DASHBOARD_RESOURCE_GROUP" TASTYTRADE_REFRESH_TOKEN || true
+preserve_legacy_prod_secret_from_azure TASTYTRADE_REFRESH_TOKEN TASTYTRADE_REFRESH_TOKEN
 
 if [ -z "$WEBHOOK_AUTH_TOKEN" ]; then
     WEBHOOK_AUTH_TOKEN="$("$PYTHON_BIN" -c "import secrets; print(secrets.token_hex(16))")"

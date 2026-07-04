@@ -28,9 +28,8 @@ Shared dev:
 
 Production:
 
-- Function App: `crassus-25`
-  - Stock/share route: `/api/trade-stock`
-  - Options route: `/api/trade-options`
+- Stock Function App: `crassus-25-stock`
+- Options Function App: `crassus-25-options`
 - Dashboard Web App: `crassus-25-dashboard`
 
 Feature branches may deploy to DEV only. PROD may deploy from `main` only.
@@ -90,7 +89,7 @@ git push origin prod-YYYY-MM-DD
 - `/api/trade` is retained temporarily as a legacy route and returns a deprecation warning.
 - Dev and prod webhook URLs are different; copy the URL from the matching dashboard or deploy output.
 - The dashboard Webhooks tab should display separate stock/share and options URLs. In Azure mode it should point stock/share alerts at the stock Function App and options alerts at the options Function App, then merge activity from both apps in the Active Webhooks view.
-- Production keeps both split routes on `crassus-25` unless an explicit infrastructure change creates separate production Function Apps.
+- Production uses separate stock and options Function Apps. The old combined `crassus-25` Function App should remain only during migration/verification and then be deleted to avoid stray executions.
 - Deploy logs print webhook endpoints without secret tokens. Redeploys preserve existing Azure webhook tokens; use the dashboard Webhooks tab or configured secret store for full authenticated URLs.
 
 ## Broker Routing Controls
@@ -102,7 +101,7 @@ The dashboard Broker Routing section can switch:
 
 These dropdowns change routing only. They do not alter `ALPACA_PAPER`, `TASTYTRADE_IS_TEST`, `TASTYTRADE_DRY_RUN`, `ENABLE_TASTYTRADE_OPTIONS`, `LIVE_TRADING_CONFIRMED`, trading halts, daily loss settings, or max position settings.
 
-Dashboard credential and webhook-token saves follow the same environment target resolution as the split webhook URLs. A dev dashboard syncs to the dev stock Function App, dev options Function App, and dev dashboard Web App; production syncs to the production Function App/dashboard targets.
+Dashboard credential and webhook-token saves follow the same environment target resolution as the split webhook URLs. A dev dashboard syncs to the dev stock Function App, dev options Function App, and dev dashboard Web App; production syncs to `crassus-25-stock`, `crassus-25-options`, and `crassus-25-dashboard`.
 
 ## Safety Rules
 

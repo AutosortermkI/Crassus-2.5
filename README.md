@@ -38,7 +38,7 @@ See [Development Workflow](docs/development_workflow.md) for the Jeremy/Joe bran
 - `main` is the last known good branch and the only production deploy source.
 - `jeremy/*` and `joe/*` branches may deploy to shared dev and must PR into `main`.
 - Shared dev uses separate stock, options, and dashboard Azure apps.
-- Production uses the `crassus-25` Function App with split `/api/trade-stock` and `/api/trade-options` routes plus the `crassus-25-dashboard` Web App.
+- Production uses separate stock and options Function Apps: `crassus-25-stock` and `crassus-25-options`, plus the `crassus-25-dashboard` Web App.
 - DEV deployments overwrite the shared dev environment. Coordinate before deploying.
 
 ```bash
@@ -581,7 +581,8 @@ The DXLink market-data code is deployed with the Function App package, but it is
 | DEV Stock Function App | `crassus-dev-stock` by default | Hosts `/api/trade-stock` in shared dev |
 | DEV Options Function App | `crassus-dev-options` by default | Hosts `/api/trade-options` in shared dev |
 | DEV Dashboard Web App | `crassus-dev-dashboard` by default | Shared dev dashboard |
-| PROD Function App | `crassus-25` by default | Hosts `/api/trade-stock`, `/api/trade-options`, and legacy `/api/trade` in production |
+| PROD Stock Function App | `crassus-25-stock` by default | Hosts `/api/trade-stock` in production |
+| PROD Options Function App | `crassus-25-options` by default | Hosts `/api/trade-options` in production |
 | PROD Dashboard Web App | `crassus-25-dashboard` by default | Production dashboard |
 | Dashboard App Service Plan | Derived from the dashboard app name by default | Hosts the shared Flask dashboard |
 
@@ -609,9 +610,10 @@ AZURE_DEV_DASHBOARD_APP_NAME="crassus-dev-dashboard"
 AZURE_DEV_DASHBOARD_RESOURCE_GROUP=""
 AZURE_DEV_DASHBOARD_PLAN_RESOURCE_GROUP=""
 AZURE_DEV_DASHBOARD_PLAN_NAME=""
-AZURE_PROD_STOCK_FUNCTION_APP_NAME="crassus-25"
-AZURE_PROD_OPTIONS_FUNCTION_APP_NAME="crassus-25"
+AZURE_PROD_STOCK_FUNCTION_APP_NAME="crassus-25-stock"
+AZURE_PROD_OPTIONS_FUNCTION_APP_NAME="crassus-25-options"
 AZURE_PROD_DASHBOARD_APP_NAME="crassus-25-dashboard"
+AZURE_LEGACY_PROD_FUNCTION_APP_NAME="crassus-25"
 AZURE_PROD_DASHBOARD_RESOURCE_GROUP=""
 AZURE_PROD_DASHBOARD_PLAN_RESOURCE_GROUP=""
 AZURE_PROD_DASHBOARD_PLAN_NAME=""
@@ -642,7 +644,7 @@ All variables are configurable via the dashboard UI or directly in `.env`.
 | `OPTIONS_WEBHOOK_AUTH_TOKEN` | Optional options route token; falls back to `WEBHOOK_AUTH_TOKEN` |
 
 The Azure deployment itself does not require Tastytrade credentials in local `.env`. If they are missing, deployment continues with split broker settings, `TASTYTRADE_IS_TEST=false`, and `TASTYTRADE_DRY_RUN=true`; the hosted dashboard will show broker credentials as missing until you enter them there.
-When credentials or webhook tokens are entered in the hosted dashboard, the dashboard syncs those settings to the current environment's stock Function App, options Function App, and dashboard Web App. Dev sync targets `crassus-dev-stock`, `crassus-dev-options`, and `crassus-dev-dashboard` by default; production keeps the original `crassus-25` Function App URL with split routes unless explicitly reconfigured.
+When credentials or webhook tokens are entered in the hosted dashboard, the dashboard syncs those settings to the current environment's stock Function App, options Function App, and dashboard Web App. Dev sync targets `crassus-dev-stock`, `crassus-dev-options`, and `crassus-dev-dashboard` by default; production syncs to `crassus-25-stock`, `crassus-25-options`, and `crassus-25-dashboard`. During migration, `AZURE_LEGACY_PROD_FUNCTION_APP_NAME=crassus-25` lets deployment read existing nonprinted secrets from the old combined Function App before that app is deleted.
 
 ### Optional (with defaults)
 

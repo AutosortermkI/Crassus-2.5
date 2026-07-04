@@ -2,6 +2,34 @@
 
 This file records deployment and resource-management decisions that matter for the live Crassus Azure estate. It intentionally omits secrets, account numbers, portfolio values, and broker credentials.
 
+## 2026-07-04 - Split Production Function Apps
+
+Branch: `jeremy/prod-split-functions`
+
+### Goal
+
+- Move production from one combined Function App to separate stock and options Function Apps.
+- Keep the dashboard at `crassus-25-dashboard`.
+- Keep Function Apps on the existing Dynamic/Consumption plan path and keep timer monitors disabled.
+- Preserve existing webhook and broker authentication settings without printing secret values.
+- Delete the old combined `crassus-25` Function App only after the new production stock/options apps are deployed and verified.
+
+### Decision
+
+- Production stock/share route: `crassus-25-stock` at `/api/trade-stock`.
+- Production options route: `crassus-25-options` at `/api/trade-options`.
+- `AZURE_LEGACY_PROD_FUNCTION_APP_NAME=crassus-25` is a migration helper so deployment can read existing Azure app settings from the old combined Function App before deletion.
+- Both new production Function Apps use the same source package. Route-specific app settings enforce single-purpose behavior:
+  - Stock app: `ACTIVE_TRADE_ENDPOINT=stock`, `ENABLE_STOCK_TRADING=true`, `ENABLE_OPTIONS_TRADING=false`
+  - Options app: `ACTIVE_TRADE_ENDPOINT=options`, `ENABLE_STOCK_TRADING=false`, `ENABLE_OPTIONS_TRADING=true`
+- Timers remain disabled on both apps:
+  - `AzureWebJobs.check_options_exits_timer.Disabled=true`
+  - `AzureWebJobs.check_stock_orders_timer.Disabled=true`
+
+### Cost Note
+
+The target Function Apps should stay on `EastUSLinuxDynamicPlan` (`Y1`, Dynamic/Consumption). This does not add a new fixed App Service plan charge. Deleting the old `crassus-25` Function App after verification avoids stray executions from the retired combined app.
+
 ## 2026-07-03 - Disable Timer Monitors And Standardize Broker-Native Exits
 
 Branch: `jeremy/current-prod-dev-no-timers`

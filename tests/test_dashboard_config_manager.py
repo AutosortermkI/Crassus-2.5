@@ -125,7 +125,7 @@ def test_split_trade_urls_use_environment_specific_function_apps(tmp_path, monke
     assert "legacy-app" not in " ".join(urls.values())
 
 
-def test_prod_defaults_keep_original_function_app_url_with_split_routes(tmp_path, monkeypatch):
+def test_prod_defaults_use_separate_stock_and_options_function_apps(tmp_path, monkeypatch):
     env_path = tmp_path / ".env"
     env_path.write_text("ENVIRONMENT_NAME=prod\n")
 
@@ -137,15 +137,15 @@ def test_prod_defaults_keep_original_function_app_url_with_split_routes(tmp_path
     targets = config_manager.resolve_broker_sync_targets()
 
     assert urls == {
-        "stock": "https://crassus-25.azurewebsites.net/api/trade-stock",
-        "options": "https://crassus-25.azurewebsites.net/api/trade-options",
+        "stock": "https://crassus-25-stock.azurewebsites.net/api/trade-stock",
+        "options": "https://crassus-25-options.azurewebsites.net/api/trade-options",
     }
     assert activity_urls == {
-        "stock": "https://crassus-25.azurewebsites.net/api/webhook-activity",
-        "options": "https://crassus-25.azurewebsites.net/api/webhook-activity",
+        "stock": "https://crassus-25-stock.azurewebsites.net/api/webhook-activity",
+        "options": "https://crassus-25-options.azurewebsites.net/api/webhook-activity",
     }
-    assert targets["stock_function"] == "crassus-25"
-    assert targets["options_function"] == "crassus-25"
+    assert targets["stock_function"] == "crassus-25-stock"
+    assert targets["options_function"] == "crassus-25-options"
     assert targets["dashboard"] == "crassus-25-dashboard"
 
 

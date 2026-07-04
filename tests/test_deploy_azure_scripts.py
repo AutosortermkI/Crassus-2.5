@@ -105,9 +105,10 @@ def test_unix_deploy_resolves_split_app_names_and_routes():
     assert "AZURE_PROD_STOCK_FUNCTION_APP_NAME" in script
     assert "AZURE_PROD_OPTIONS_FUNCTION_APP_NAME" in script
     assert "AZURE_PROD_DASHBOARD_APP_NAME" in script
-    assert 'env_default "$(load_env_var "AZURE_PROD_STOCK_FUNCTION_APP_NAME")" "crassus-25"' in script
-    assert 'env_default "$(load_env_var "AZURE_PROD_OPTIONS_FUNCTION_APP_NAME")" "crassus-25"' in script
+    assert 'env_default "$(load_env_var "AZURE_PROD_STOCK_FUNCTION_APP_NAME")" "crassus-25-stock"' in script
+    assert 'env_default "$(load_env_var "AZURE_PROD_OPTIONS_FUNCTION_APP_NAME")" "crassus-25-options"' in script
     assert 'env_default "$(load_env_var "AZURE_PROD_DASHBOARD_APP_NAME")" "crassus-25-dashboard"' in script
+    assert 'env_default "$(load_env_var "AZURE_LEGACY_PROD_FUNCTION_APP_NAME")" "crassus-25"' in script
     assert 'if [ "$STOCK_FUNCTION_APP_NAME" = "$OPTIONS_FUNCTION_APP_NAME" ]' in script
     assert "ACTIVE_TRADE_ENDPOINT=both" in script
     assert "ENABLE_STOCK_TRADING=true" in script
@@ -142,6 +143,19 @@ def test_unix_deploy_preserves_existing_azure_webhook_tokens_before_generating_n
     assert preserve_block.index("preserve_secret_from_azure") < preserve_block.index("WEBHOOK_AUTH_TOKEN=\"$(\"$PYTHON_BIN\" -c")
     assert "STOCK_WEBHOOK_AUTH_TOKEN=\"${STOCK_WEBHOOK_AUTH_TOKEN:-$WEBHOOK_AUTH_TOKEN}\"" in preserve_block
     assert "OPTIONS_WEBHOOK_AUTH_TOKEN=\"${OPTIONS_WEBHOOK_AUTH_TOKEN:-$WEBHOOK_AUTH_TOKEN}\"" in preserve_block
+
+
+def test_unix_deploy_preserves_legacy_prod_broker_secrets_for_split_migration():
+    script = (ROOT_DIR / "deploy_azure.sh").read_text()
+    preserve_block = script.split("ensure_dashboard_can_start", 1)[1].split("COMMON_FUNCTION_SETTINGS=(", 1)[0]
+
+    assert "preserve_legacy_prod_secret_from_azure" in script
+    assert "LEGACY_PROD_FUNCTION_APP_NAME" in script
+    assert "preserve_legacy_prod_secret_from_azure ALPACA_API_KEY ALPACA_API_KEY" in preserve_block
+    assert "preserve_legacy_prod_secret_from_azure ALPACA_SECRET_KEY ALPACA_SECRET_KEY" in preserve_block
+    assert "preserve_legacy_prod_secret_from_azure TASTYTRADE_ACCOUNT_NUMBER TASTYTRADE_ACCOUNT_NUMBER" in preserve_block
+    assert "preserve_legacy_prod_secret_from_azure TASTYTRADE_CLIENT_SECRET TASTYTRADE_CLIENT_SECRET" in preserve_block
+    assert "preserve_legacy_prod_secret_from_azure TASTYTRADE_REFRESH_TOKEN TASTYTRADE_REFRESH_TOKEN" in preserve_block
 
 
 def test_unix_deploy_accepts_python_or_python3_runtime():
