@@ -11,7 +11,7 @@ Branch: `jeremy/prod-split-functions`
 - Move production from one combined Function App to separate stock and options Function Apps.
 - Keep the dashboard at `crassus-25-dashboard`.
 - Keep Function Apps on the existing Dynamic/Consumption plan path and keep timer monitors disabled.
-- Preserve existing webhook and broker authentication settings without printing secret values.
+- Preserve existing webhook, broker authentication, and live-trading safety settings without printing secret values.
 - Delete the old combined `crassus-25` Function App only after the new production stock/options apps are deployed and verified.
 
 ### Decision

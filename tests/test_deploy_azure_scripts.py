@@ -150,9 +150,14 @@ def test_unix_deploy_preserves_legacy_prod_broker_secrets_for_split_migration():
     preserve_block = script.split("ensure_dashboard_can_start", 1)[1].split("COMMON_FUNCTION_SETTINGS=(", 1)[0]
 
     assert "preserve_legacy_prod_secret_from_azure" in script
+    assert "preserve_legacy_prod_setting_from_azure" in script
     assert "LEGACY_PROD_FUNCTION_APP_NAME" in script
     assert "preserve_legacy_prod_secret_from_azure ALPACA_API_KEY ALPACA_API_KEY" in preserve_block
     assert "preserve_legacy_prod_secret_from_azure ALPACA_SECRET_KEY ALPACA_SECRET_KEY" in preserve_block
+    assert "preserve_legacy_prod_setting_from_azure ALPACA_PAPER ALPACA_PAPER" in preserve_block
+    assert "preserve_legacy_prod_setting_from_azure TASTYTRADE_IS_TEST TASTYTRADE_IS_TEST" in preserve_block
+    assert "preserve_legacy_prod_setting_from_azure TASTYTRADE_DRY_RUN TASTYTRADE_DRY_RUN" in preserve_block
+    assert "preserve_legacy_prod_setting_from_azure LIVE_TRADING_CONFIRMED LIVE_TRADING_CONFIRMED" in preserve_block
     assert "preserve_legacy_prod_secret_from_azure TASTYTRADE_ACCOUNT_NUMBER TASTYTRADE_ACCOUNT_NUMBER" in preserve_block
     assert "preserve_legacy_prod_secret_from_azure TASTYTRADE_CLIENT_SECRET TASTYTRADE_CLIENT_SECRET" in preserve_block
     assert "preserve_legacy_prod_secret_from_azure TASTYTRADE_REFRESH_TOKEN TASTYTRADE_REFRESH_TOKEN" in preserve_block

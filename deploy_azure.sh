@@ -177,6 +177,20 @@ preserve_legacy_prod_secret_from_azure() {
     fi
 }
 
+preserve_legacy_prod_setting_from_azure() {
+    local variable_name="$1"
+    local key="$2"
+    local existing=""
+
+    if [ "$DEPLOY_ENV" = "prod" ] && [ -n "${LEGACY_PROD_FUNCTION_APP_NAME:-}" ]; then
+        existing="$(read_app_setting "functionapp" "$LEGACY_PROD_FUNCTION_APP_NAME" "$RESOURCE_GROUP" "$key")"
+        if [ -n "$existing" ]; then
+            printf -v "$variable_name" '%s' "$existing"
+            echo "[INFO] Preserving existing Azure app setting: $key"
+        fi
+    fi
+}
+
 current_utc() {
     "$PYTHON_BIN" - <<'PY'
 from datetime import datetime, timezone
@@ -519,6 +533,10 @@ preserve_secret_from_azure \
     functionapp "$STOCK_FUNCTION_APP_NAME" "$RESOURCE_GROUP" ALPACA_SECRET_KEY \
     webapp "$DASHBOARD_APP_NAME" "$DASHBOARD_RESOURCE_GROUP" ALPACA_SECRET_KEY || true
 preserve_legacy_prod_secret_from_azure ALPACA_SECRET_KEY ALPACA_SECRET_KEY
+preserve_legacy_prod_setting_from_azure ALPACA_PAPER ALPACA_PAPER
+preserve_legacy_prod_setting_from_azure TASTYTRADE_IS_TEST TASTYTRADE_IS_TEST
+preserve_legacy_prod_setting_from_azure TASTYTRADE_DRY_RUN TASTYTRADE_DRY_RUN
+preserve_legacy_prod_setting_from_azure LIVE_TRADING_CONFIRMED LIVE_TRADING_CONFIRMED
 preserve_secret_from_azure \
     TASTYTRADE_ACCOUNT_NUMBER \
     functionapp "$OPTIONS_FUNCTION_APP_NAME" "$RESOURCE_GROUP" TASTYTRADE_ACCOUNT_NUMBER \
