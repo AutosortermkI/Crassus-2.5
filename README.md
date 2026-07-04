@@ -562,7 +562,7 @@ This script:
 8. Deploys the same `function_app` package to the target Function App or Apps.
 9. Deploys the dashboard package and prints stock/options/legacy webhook endpoints without webhook tokens.
 
-Webhook tokens are intentionally omitted from deploy output so they do not land in terminal logs. Use the dashboard Webhooks tab or the configured secret store when you need the full authenticated URLs.
+Webhook tokens are intentionally omitted from deploy output so they do not land in terminal logs. Existing Azure webhook tokens are preserved during redeploys; a new token is generated only when no local or hosted token exists. Use the dashboard Webhooks tab or the configured secret store when you need the full authenticated URLs.
 
 The DXLink market-data code is deployed with the Function App package, but it is intended to run as a separate worker process such as an Azure WebJob or Container App. Do not run the long-lived websocket loop as an HTTP-triggered Consumption Function. Use `./run_market_data_worker.sh` as the worker startup command after setting `MARKET_DATA_WATCHLIST` and Tastytrade credentials.
 

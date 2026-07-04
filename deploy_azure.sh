@@ -106,6 +106,57 @@ env_default() {
     fi
 }
 
+read_app_setting() {
+    local app_kind="$1"
+    local app_name="$2"
+    local resource_group="$3"
+    local key="$4"
+    local value
+
+    if [ "$app_kind" = "functionapp" ]; then
+        value="$(az functionapp config appsettings list \
+            --resource-group "$resource_group" \
+            --name "$app_name" \
+            --query "[?name=='$key'].value | [0]" \
+            -o tsv 2>/dev/null || true)"
+    else
+        value="$(az webapp config appsettings list \
+            --resource-group "$resource_group" \
+            --name "$app_name" \
+            --query "[?name=='$key'].value | [0]" \
+            -o tsv 2>/dev/null || true)"
+    fi
+
+    if [ "$value" = "null" ]; then
+        value=""
+    fi
+    printf '%s' "$value"
+}
+
+preserve_secret_from_azure() {
+    local variable_name="$1"
+    shift
+    local key=""
+    local existing=""
+
+    while [ "$#" -ge 4 ]; do
+        local app_kind="$1"
+        local app_name="$2"
+        local resource_group="$3"
+        key="$4"
+        shift 4
+
+        existing="$(read_app_setting "$app_kind" "$app_name" "$resource_group" "$key")"
+        if [ -n "$existing" ]; then
+            printf -v "$variable_name" '%s' "$existing"
+            echo "[INFO] Preserving existing Azure app setting: $key"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
 current_utc() {
     python3 - <<'PY'
 from datetime import datetime, timezone
@@ -320,13 +371,8 @@ DASHBOARD_ACCESS_PASSWORD_HASH="$(load_env_var "DASHBOARD_ACCESS_PASSWORD_HASH")
 DASHBOARD_SESSION_SECRET="$(load_env_var "DASHBOARD_SESSION_SECRET")"
 AZURE_SUBSCRIPTION_ID="$(load_env_var "AZURE_SUBSCRIPTION_ID")"
 
-if [ -z "$WEBHOOK_AUTH_TOKEN" ]; then
-    WEBHOOK_AUTH_TOKEN="$(python3 -c "import secrets; print(secrets.token_hex(16))")"
-    echo "[INFO] Auto-generated WEBHOOK_AUTH_TOKEN and saved it to .env."
-    upsert_env_var "WEBHOOK_AUTH_TOKEN" "$WEBHOOK_AUTH_TOKEN"
-fi
-STOCK_WEBHOOK_AUTH_TOKEN="${STOCK_WEBHOOK_AUTH_TOKEN:-$WEBHOOK_AUTH_TOKEN}"
-OPTIONS_WEBHOOK_AUTH_TOKEN="${OPTIONS_WEBHOOK_AUTH_TOKEN:-$WEBHOOK_AUTH_TOKEN}"
+# Webhook tokens are resolved after Azure app names are known so existing
+# hosted app settings can be preserved instead of overwritten by stale .env data.
 
 if [ "$STOCK_BROKER" = "tastytrade" ] || [ "$OPTIONS_BROKER" = "tastytrade" ] || [ "$ORDER_BROKER" = "tastytrade" ]; then
     if [ -z "$TASTYTRADE_ACCOUNT_NUMBER" ] || [ -z "$TASTYTRADE_CLIENT_SECRET" ] || [ -z "$TASTYTRADE_REFRESH_TOKEN" ]; then
@@ -428,6 +474,27 @@ else
 fi
 ensure_dashboard_app
 ensure_dashboard_can_start
+
+preserve_secret_from_azure \
+    WEBHOOK_AUTH_TOKEN \
+    functionapp "$STOCK_FUNCTION_APP_NAME" "$RESOURCE_GROUP" WEBHOOK_AUTH_TOKEN \
+    webapp "$DASHBOARD_APP_NAME" "$DASHBOARD_RESOURCE_GROUP" WEBHOOK_AUTH_TOKEN || true
+preserve_secret_from_azure \
+    STOCK_WEBHOOK_AUTH_TOKEN \
+    functionapp "$STOCK_FUNCTION_APP_NAME" "$RESOURCE_GROUP" STOCK_WEBHOOK_AUTH_TOKEN \
+    webapp "$DASHBOARD_APP_NAME" "$DASHBOARD_RESOURCE_GROUP" STOCK_WEBHOOK_AUTH_TOKEN || true
+preserve_secret_from_azure \
+    OPTIONS_WEBHOOK_AUTH_TOKEN \
+    functionapp "$OPTIONS_FUNCTION_APP_NAME" "$RESOURCE_GROUP" OPTIONS_WEBHOOK_AUTH_TOKEN \
+    webapp "$DASHBOARD_APP_NAME" "$DASHBOARD_RESOURCE_GROUP" OPTIONS_WEBHOOK_AUTH_TOKEN || true
+
+if [ -z "$WEBHOOK_AUTH_TOKEN" ]; then
+    WEBHOOK_AUTH_TOKEN="$(python3 -c "import secrets; print(secrets.token_hex(16))")"
+    echo "[INFO] Auto-generated WEBHOOK_AUTH_TOKEN and saved it to .env."
+    upsert_env_var "WEBHOOK_AUTH_TOKEN" "$WEBHOOK_AUTH_TOKEN"
+fi
+STOCK_WEBHOOK_AUTH_TOKEN="${STOCK_WEBHOOK_AUTH_TOKEN:-$WEBHOOK_AUTH_TOKEN}"
+OPTIONS_WEBHOOK_AUTH_TOKEN="${OPTIONS_WEBHOOK_AUTH_TOKEN:-$WEBHOOK_AUTH_TOKEN}"
 
 COMMON_FUNCTION_SETTINGS=(
     "ENVIRONMENT_NAME=$DEPLOY_ENV"

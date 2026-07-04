@@ -131,6 +131,19 @@ def test_unix_deploy_defaults_to_broker_native_exits_with_timers_disabled():
     assert '"AzureWebJobs.check_stock_orders_timer.Disabled=true"' in common_settings_block
 
 
+def test_unix_deploy_preserves_existing_azure_webhook_tokens_before_generating_new_ones():
+    script = (ROOT_DIR / "deploy_azure.sh").read_text()
+    preserve_block = script.split("ensure_dashboard_can_start", 1)[1].split("COMMON_FUNCTION_SETTINGS=(", 1)[0]
+
+    assert "preserve_secret_from_azure" in script
+    assert "read_app_setting" in script
+    assert "Preserving existing Azure app setting" in script
+    assert "WEBHOOK_AUTH_TOKEN=\"$(python3 -c" in preserve_block
+    assert preserve_block.index("preserve_secret_from_azure") < preserve_block.index("WEBHOOK_AUTH_TOKEN=\"$(python3 -c")
+    assert "STOCK_WEBHOOK_AUTH_TOKEN=\"${STOCK_WEBHOOK_AUTH_TOKEN:-$WEBHOOK_AUTH_TOKEN}\"" in preserve_block
+    assert "OPTIONS_WEBHOOK_AUTH_TOKEN=\"${OPTIONS_WEBHOOK_AUTH_TOKEN:-$WEBHOOK_AUTH_TOKEN}\"" in preserve_block
+
+
 def test_unix_deploy_supports_existing_dashboard_plan_and_quota_preflight():
     script = (ROOT_DIR / "deploy_azure.sh").read_text()
 

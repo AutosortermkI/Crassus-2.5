@@ -91,7 +91,7 @@ git push origin prod-YYYY-MM-DD
 - Dev and prod webhook URLs are different; copy the URL from the matching dashboard or deploy output.
 - The dashboard Webhooks tab should display separate stock/share and options URLs. In Azure mode it should point stock/share alerts at the stock Function App and options alerts at the options Function App, then merge activity from both apps in the Active Webhooks view.
 - Production keeps both split routes on `crassus-25` unless an explicit infrastructure change creates separate production Function Apps.
-- Deploy logs print webhook endpoints without secret tokens. Use the dashboard Webhooks tab or configured secret store for full authenticated URLs.
+- Deploy logs print webhook endpoints without secret tokens. Redeploys preserve existing Azure webhook tokens; use the dashboard Webhooks tab or configured secret store for full authenticated URLs.
 
 ## Broker Routing Controls
 
