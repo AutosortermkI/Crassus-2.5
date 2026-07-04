@@ -97,6 +97,27 @@ def test_get_config_exposes_market_data_worker_settings(tmp_path, monkeypatch):
     assert config["MARKET_DATA_STALE_SECONDS"]["value"] == "60"
 
 
+def test_get_config_exposes_split_function_app_settings(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "AZURE_STOCK_FUNCTION_APP_NAME=prod-stock\n"
+        "AZURE_OPTIONS_FUNCTION_APP_NAME=prod-options\n"
+        "AZURE_FUNCTION_APP_NAME=legacy-combined\n"
+    )
+
+    monkeypatch.setattr(config_manager, "ENV_PATH", env_path)
+    monkeypatch.delenv("WEBSITE_SITE_NAME", raising=False)
+
+    config = config_manager.get_config()
+
+    assert config["AZURE_STOCK_FUNCTION_APP_NAME"]["value"] == "prod-stock"
+    assert config["AZURE_STOCK_FUNCTION_APP_NAME"]["label"] == "Stock Function App Name"
+    assert config["AZURE_OPTIONS_FUNCTION_APP_NAME"]["value"] == "prod-options"
+    assert config["AZURE_OPTIONS_FUNCTION_APP_NAME"]["label"] == "Options Function App Name"
+    assert config["AZURE_FUNCTION_APP_NAME"]["label"] == "Legacy Function App Name"
+    assert "fallback" in config["AZURE_FUNCTION_APP_NAME"]["description"].lower()
+
+
 def test_split_trade_urls_use_environment_specific_function_apps(tmp_path, monkeypatch):
     env_path = tmp_path / ".env"
     env_path.write_text(

@@ -2,6 +2,43 @@
 
 This file records deployment and resource-management decisions that matter for the live Crassus Azure estate. It intentionally omits secrets, account numbers, portfolio values, and broker credentials.
 
+## 2026-07-04 - Restore Hosted Dashboard Azure Sync Permissions
+
+Branch: `jeremy/dashboard-sync-cleanup`
+
+### Goal
+
+- Let the hosted dev and production dashboards sync dashboard-entered broker/config settings to the matching split Function Apps.
+- Keep sync scoped to the active split apps instead of the retired combined production Function App.
+- Preserve paper-mode safety and avoid enabling live trading.
+
+### Actions
+
+- Enabled system-assigned managed identities on the production split Function Apps:
+  - `crassus-25-stock`
+  - `crassus-25-options`
+- Granted the production dashboard identity app-setting write access to:
+  - `crassus-25-stock`
+  - `crassus-25-options`
+- Granted the dev dashboard identity app-setting write access to:
+  - `crassus-dev-stock`
+  - `crassus-dev-options`
+  - `crassus-dev-dashboard`
+- Granted the dev dashboard identity Key Vault secret write access so dashboard-entered broker secrets can be stored as Key Vault references.
+- Granted the production stock/options Function App identities Key Vault secret read access so their existing Key Vault app-setting references can resolve.
+- Restored the production dashboard app setting `ALPACA_PAPER=true` after a failed dashboard sync left only the dashboard app drifted to `false`; the production Function Apps remained paper-mode throughout.
+- Restarted the affected dashboard and production Function Apps to refresh identity and app-setting state.
+
+### Verification
+
+- Production dashboard app settings show split sync targets:
+  - `AZURE_STOCK_FUNCTION_APP_NAME=crassus-25-stock`
+  - `AZURE_OPTIONS_FUNCTION_APP_NAME=crassus-25-options`
+- Production stock/options Function Apps still show `ALPACA_PAPER=true`, timers disabled, and deployed SHA `819b5007d8ae42dca650e5c73a8d52b741d89382`.
+- Dashboard health checks returned HTTP `200` for dev and production.
+- Unauthenticated stock/options route probes returned HTTP `401` for dev and production.
+- No live-trading confirmation was enabled.
+
 ## 2026-07-04 - Split Production Function Apps
 
 Branch: `jeremy/prod-split-functions`
