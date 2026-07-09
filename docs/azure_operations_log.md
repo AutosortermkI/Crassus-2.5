@@ -2,6 +2,37 @@
 
 This file records deployment and resource-management decisions that matter for the live Crassus Azure estate. It intentionally omits secrets, account numbers, portfolio values, and broker credentials.
 
+## 2026-07-09 - Deploy Dashboard Logs Tab And Split Safety Fix
+
+Branch: `main`
+
+### Goal
+
+- Deploy the dashboard Logs tab, split route test diagnostics, and Alpaca/Tastytrade split safety fix to shared dev and production.
+- Keep stock/options Function Apps on Dynamic/Consumption (`Y1`) and keep timer monitors disabled.
+- Do not enable live trading or change broker safety flags.
+
+### Actions
+
+- Pushed `main` commit `5f546197cadeb7fe2c7ad7f7e937f1dd416e4d00`.
+- Deployed shared dev with `deploy_azure.sh --env dev`.
+- Deployed production with `deploy_azure.sh --env prod` after manual confirmation.
+- Production Function Apps deployed normally:
+  - `crassus-25-stock`
+  - `crassus-25-options`
+- Production dashboard zip deploy reported a Kudu `504 GatewayTimeout` while the Web App settings updated. The dashboard was recovered by uploading only the changed dashboard files through Kudu VFS and restarting `crassus-25-dashboard`.
+
+### Verification
+
+- Dev dashboard and Function Apps report deployed SHA `5f546197cadeb7fe2c7ad7f7e937f1dd416e4d00`.
+- Production dashboard and Function Apps report deployed SHA `5f546197cadeb7fe2c7ad7f7e937f1dd416e4d00`.
+- Dashboard health checks returned HTTP `200` for dev and production.
+- Unauthenticated stock/options route probes returned HTTP `401` for dev and production.
+- Timer settings remained disabled:
+  - `AzureWebJobs.check_options_exits_timer.Disabled=true`
+  - `AzureWebJobs.check_stock_orders_timer.Disabled=true`
+- Production dashboard static assets serve the Logs tab JavaScript.
+
 ## 2026-07-04 - Restore Hosted Dashboard Azure Sync Permissions
 
 Branch: `jeremy/dashboard-sync-cleanup`
