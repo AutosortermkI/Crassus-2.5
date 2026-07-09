@@ -57,6 +57,7 @@
     let _pendingSave = false;
     let selectedTemplateKey = 'stockBuy';
     let brokerRouting = { stock_broker: 'alpaca', options_broker: 'tastytrade', environment_name: 'dev' };
+    let diagnosticsState = { lastTest: null, snapshot: null };
     const sampleMarketData = {
         stock: { ticker: 'F', close: '14.90' },
         options: {
@@ -185,6 +186,9 @@
                 panels.forEach(p => p.classList.remove('active'));
                 tab.classList.add('active');
                 document.getElementById('panel-' + target).classList.add('active');
+                if (target === 'logs') {
+                    loadDiagnostics();
+                }
             });
         });
     }
@@ -507,6 +511,270 @@
     }
 
     // ------------------------------------------------------------------
+    // API: Diagnostics / Logs
+    // ------------------------------------------------------------------
+    function fetchJson(path) {
+        return fetch(path).then(r => r.json().then(data => {
+            if (!r.ok || data.status === 'error') {
+                throw new Error(data.message || path + ' failed');
+            }
+            return data;
+        }));
+    }
+
+    function summarizeTestResult(data) {
+        if (!data) return 'No test sent from this browser session.';
+        return JSON.stringify({
+            status: data.status,
+            message: data.message,
+            response_code: data.response_code,
+            trade_url: data.trade_url,
+            parsed: data.parsed,
+            response_body: data.response_body,
+        }, null, 2);
+    }
+
+    function renderDiagnosticsTestResult() {
+        const el = document.getElementById('diagnosticsTestResult');
+        if (el) el.textContent = summarizeTestResult(diagnosticsState.lastTest);
+    }
+
+    function errorDetailFromEvent(event) {
+        const forward = event.forward || {};
+        const execution = event.execution || {};
+        const executionBody = execution.body || {};
+        if (event.parse_error) return event.parse_error;
+        if (forward.error) return forward.error;
+        if (Number(forward.status_code || 0) >= 400) return JSON.stringify(forward.body || forward.response_body || forward);
+        if (Number(execution.status_code || 0) >= 400) return execution.message || executionBody.error || executionBody.message || JSON.stringify(executionBody);
+        const status = String(executionBody.status || execution.status || '').toLowerCase();
+        if (status.includes('reject') || status.includes('error')) {
+            return execution.message || executionBody.error || executionBody.message || status;
+        }
+        return '';
+    }
+
+    function collectDiagnosticsErrors(activity, combined) {
+        const errors = [];
+        for (const event of activity.recent_events || []) {
+            const detail = errorDetailFromEvent(event);
+            if (!detail) continue;
+            const parsed = event.parsed || {};
+            errors.push({
+                time: event.received_at || event.recorded_at,
+                source: 'webhook',
+                ticker: parsed.ticker || '-',
+                area: parsed.mode || 'alert',
+                detail,
+            });
+        }
+        for (const event of combined.paper_events || []) {
+            const detail = errorDetailFromEvent(event);
+            if (!detail) continue;
+            const parsed = event.parsed || {};
+            errors.push({
+                time: event.recorded_at,
+                source: event.broker || 'paper-ledger',
+                ticker: parsed.ticker || '-',
+                area: event.event_type || 'ledger',
+                detail,
+            });
+        }
+        return errors.slice(0, 20);
+    }
+
+    function renderDiagnosticsErrors(errors) {
+        const container = document.getElementById('diagnosticsErrors');
+        const count = document.getElementById('diagnosticsErrorCount');
+        if (!container || !count) return;
+        count.textContent = String(errors.length || 0);
+
+        if (!errors.length) {
+            container.innerHTML = '<div class="empty-state">No recent errors found in merged activity.</div>';
+            return;
+        }
+
+        let html = '<div class="table-wrap"><table><thead><tr>' +
+            '<th>Time</th><th>Source</th><th>Ticker</th><th>Area</th><th>Detail</th>' +
+            '</tr></thead><tbody>';
+        for (const item of errors) {
+            html += `<tr>
+                <td>${esc(formatDate(item.time))}</td>
+                <td>${esc(item.source)}</td>
+                <td><strong>${esc(item.ticker)}</strong></td>
+                <td>${esc(item.area)}</td>
+                <td>${esc(item.detail)}</td>
+            </tr>`;
+        }
+        html += '</tbody></table></div>';
+        container.innerHTML = html;
+    }
+
+    function renderDiagnostics(snapshot) {
+        const info = snapshot.webhookInfo || {};
+        const broker = snapshot.brokerStatus || {};
+        const combined = snapshot.combined || {};
+        const activity = snapshot.activity || {};
+        const routing = broker.routing || {};
+        const safety = broker.safety || {};
+        const tasty = broker.tastytrade || {};
+        const alpaca = broker.alpaca || {};
+        const market = combined.market_data || {};
+        const warnings = activity.warnings || [];
+        const errors = collectDiagnosticsErrors(activity, combined);
+
+        const statusPillEl = document.getElementById('diagnosticsStatusPill');
+        if (statusPillEl) {
+            statusPillEl.textContent = errors.length ? 'Errors Found' : 'No Recent Errors';
+            statusPillEl.className = 'status-pill ' + (errors.length ? 'status-error' : 'status-success');
+        }
+
+        const grid = document.getElementById('diagnosticsStatusGrid');
+        if (grid) {
+            grid.innerHTML = `
+                <div class="stat-box"><div class="label">Environment</div><div class="value">${esc(broker.environment_name || brokerRouting.environment_name || '-')}</div></div>
+                <div class="stat-box"><div class="label">Stock Broker</div><div class="value">${esc(routing.stock_broker || brokerRouting.stock_broker || '-')}</div></div>
+                <div class="stat-box"><div class="label">Options Broker</div><div class="value">${esc(routing.options_broker || brokerRouting.options_broker || '-')}</div></div>
+                <div class="stat-box"><div class="label">Live Orders</div><div class="value">${safety.can_place_live_orders ? 'ENABLED' : 'BLOCKED'}</div></div>
+                <div class="stat-box"><div class="label">Tastytrade</div><div class="value">${esc(tasty.status || '-')}</div></div>
+                <div class="stat-box"><div class="label">Alpaca</div><div class="value">${esc(alpaca.status || '-')}</div></div>
+                <div class="stat-box"><div class="label">Market Data</div><div class="value">${esc(market.status || 'unknown')}</div></div>
+                <div class="stat-box"><div class="label">Warnings</div><div class="value">${esc(warnings.length)}</div></div>
+            `;
+        }
+
+        renderDiagnosticsTestResult();
+        renderDiagnosticsErrors(errors);
+
+        const raw = document.getElementById('diagnosticsSnapshot');
+        if (raw) {
+            raw.textContent = JSON.stringify({
+                routes: {
+                    stock: info.stock_url || routing.stock_endpoint,
+                    options: info.options_url || routing.options_endpoint,
+                    forward_target: info.forward_target,
+                },
+                deployed: {
+                    branch: routing.deployed_git_branch,
+                    sha: routing.deployed_git_sha,
+                    at: routing.deployed_at_utc,
+                },
+                safety,
+                tastytrade: {
+                    status: tasty.status,
+                    api_mode: tasty.is_test ? 'cert/sandbox' : 'production',
+                    dry_run: tasty.dry_run,
+                    options_enabled: tasty.options_enabled,
+                    message: tasty.mode_warning || tasty.message,
+                },
+                alpaca: {
+                    status: alpaca.status,
+                    paper: alpaca.paper,
+                    message: alpaca.message,
+                },
+                activity: {
+                    active_count: (activity.active_webhooks || []).length,
+                    recent_count: (activity.recent_events || []).length,
+                    warnings,
+                },
+                recent_errors: errors,
+                last_test: diagnosticsState.lastTest,
+            }, null, 2);
+        }
+    }
+
+    function loadDiagnostics() {
+        const refresh = document.getElementById('diagnosticsRefreshBtn');
+        if (refresh) {
+            refresh.disabled = true;
+            refresh.innerHTML = '<span class="spinner"></span> Refreshing...';
+        }
+
+        const snapshot = diagnosticsState.snapshot || {};
+        diagnosticsState.snapshot = snapshot;
+        renderDiagnostics(snapshot);
+
+        const sources = [
+            ['webhookInfo', '/api/webhook/info'],
+            ['brokerStatus', '/api/broker/status'],
+            ['combined', '/api/dashboard/combined'],
+            ['activity', '/api/webhook/activity'],
+        ];
+        let pending = sources.length;
+        const finish = () => {
+            pending -= 1;
+            if (pending === 0 && refresh) {
+                refresh.disabled = false;
+                refresh.textContent = 'Refresh';
+            }
+        };
+
+        for (const [key, path] of sources) {
+            fetchJson(path)
+                .then(data => {
+                    snapshot[key] = data;
+                    renderDiagnostics(snapshot);
+                })
+                .catch(err => {
+                    snapshot[key] = {};
+                    snapshot.activity = snapshot.activity || {};
+                    snapshot.activity.warnings = (snapshot.activity.warnings || []).concat(err.message || path + ' failed');
+                    renderDiagnostics(snapshot);
+                })
+                .finally(finish);
+        }
+    }
+
+    function runDiagnosticsTest(templateKey) {
+        const isOptions = String(templateKey || '').startsWith('options');
+        const btn = document.getElementById(isOptions ? 'diagnosticsOptionsTestBtn' : 'diagnosticsStockTestBtn');
+        const payload = sampleWebhookPayload(templateKey || 'stockBuy');
+        diagnosticsState.lastTest = {
+            status: 'pending',
+            message: 'Sending ' + (isOptions ? 'options' : 'stock') + ' route test.',
+            parsed: payload,
+        };
+        renderDiagnosticsTestResult();
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span> Testing...';
+        }
+
+        fetch('/api/webhook/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ payload }),
+        })
+        .then(r => r.json().then(data => ({ ok: r.ok, data })))
+        .then(({ ok, data }) => {
+            diagnosticsState.lastTest = data;
+            renderDiagnosticsTestResult();
+            if (!ok || data.status !== 'ok') {
+                throw new Error(data.message || 'Route test failed');
+            }
+            showToast((isOptions ? 'Options' : 'Stock') + ' route test sent', 'success');
+            loadDiagnostics();
+        })
+        .catch(err => {
+            if (!diagnosticsState.lastTest || diagnosticsState.lastTest.status === 'pending') {
+                diagnosticsState.lastTest = {
+                    status: 'error',
+                    message: err.message,
+                    parsed: payload,
+                };
+            }
+            renderDiagnosticsTestResult();
+            showToast(err.message, 'error');
+        })
+        .finally(() => {
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = isOptions ? 'Test Options' : 'Test Stock';
+            }
+        });
+    }
+
+    // ------------------------------------------------------------------
     // API: Test Webhook
     // ------------------------------------------------------------------
     function testWebhook() {
@@ -521,6 +789,8 @@
         })
         .then(r => r.json())
         .then(data => {
+            diagnosticsState.lastTest = data;
+            renderDiagnosticsTestResult();
             if (data.status !== 'ok') throw new Error(data.message || 'Test webhook failed');
             const result = data.forward || data.response_body || {};
             if (data.response_code && data.response_code < 400) {
@@ -1196,7 +1466,7 @@
         .then(data => {
             if (data.status !== 'ok') throw new Error(data.message || 'Could not save settings');
             if (data.azure_error) {
-                showToast('Saved locally. Azure sync needs attention.', 'error');
+                showToast(data.message || 'Saved locally. Azure sync needs attention.', 'error');
             } else {
                 showToast('Settings saved', 'success');
             }
@@ -1243,6 +1513,7 @@
         loadCombinedDashboard();
         loadConfig();
         loadBrokerRouting();
+        loadDiagnostics();
 
         // Polling intervals
         setInterval(loadWebhookActivity, 5000);
@@ -1258,6 +1529,8 @@
     window.generateToken = generateToken;
     window.testWebhook = testWebhook;
     window.clearWebhooks = clearWebhooks;
+    window.loadDiagnostics = loadDiagnostics;
+    window.runDiagnosticsTest = runDiagnosticsTest;
     window.submitCredentials = submitCredentials;
     window.submitAlpacaCredentials = submitAlpacaCredentials;
     window.saveConfig = saveConfig;

@@ -491,6 +491,66 @@ def test_dashboard_test_webhook_uses_options_split_endpoint_for_options_payload(
     assert post.call_args.kwargs["json"]["mode"] == "options"
 
 
+def test_dashboard_test_webhook_surfaces_split_function_errors(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "ENVIRONMENT_NAME=prod\n"
+        "WEBHOOK_AUTH_TOKEN=token-123\n"
+        "WEBHOOK_FORWARD_TARGET=azure\n"
+        "AZURE_PROD_STOCK_FUNCTION_BASE_URL=https://prod-stock.azurewebsites.net\n"
+        "AZURE_PROD_OPTIONS_FUNCTION_BASE_URL=https://prod-options.azurewebsites.net\n"
+    )
+    monkeypatch.setattr(config_manager, "ENV_PATH", env_path)
+    monkeypatch.delenv("WEBSITE_SITE_NAME", raising=False)
+
+    module = _load_app_module("dashboard_app_split_test_webhook_error_test")
+    response = MagicMock()
+    response.status_code = 403
+    response.headers = {"content-type": "application/json"}
+    response.json.return_value = {
+        "status": "error",
+        "error": "Tastytrade live trading is enabled but not confirmed.",
+    }
+    post = MagicMock(return_value=response)
+    monkeypatch.setattr(module.http_requests, "post", post)
+
+    api_response = module.app.test_client().post("/api/webhook/test", json={})
+    body = api_response.get_json()
+
+    assert api_response.status_code == 403
+    assert body["status"] == "error"
+    assert "Tastytrade live trading is enabled" in body["message"]
+    assert body["response_code"] == 403
+
+
+def test_dashboard_test_webhook_redacts_token_from_network_errors(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "ENVIRONMENT_NAME=dev\n"
+        "WEBHOOK_AUTH_TOKEN=token-123\n"
+        "WEBHOOK_FORWARD_TARGET=azure\n"
+        "AZURE_DEV_STOCK_FUNCTION_BASE_URL=https://dev-stock.azurewebsites.net\n"
+        "AZURE_DEV_OPTIONS_FUNCTION_BASE_URL=https://dev-options.azurewebsites.net\n"
+    )
+    monkeypatch.setattr(config_manager, "ENV_PATH", env_path)
+    monkeypatch.delenv("WEBSITE_SITE_NAME", raising=False)
+
+    module = _load_app_module("dashboard_app_split_test_webhook_redaction_test")
+    monkeypatch.setattr(
+        module.http_requests,
+        "post",
+        MagicMock(side_effect=Exception("failed url /api/trade-stock?token=token-123")),
+    )
+
+    api_response = module.app.test_client().post("/api/webhook/test", json={})
+    body = api_response.get_json()
+
+    assert api_response.status_code == 500
+    assert body["status"] == "error"
+    assert "token-123" not in body["message"]
+    assert "token=[redacted]" in body["message"]
+
+
 def test_webhook_activity_merges_split_function_results(tmp_path, monkeypatch):
     env_path = tmp_path / ".env"
     env_path.write_text(

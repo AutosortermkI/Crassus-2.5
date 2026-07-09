@@ -910,6 +910,18 @@ tbody tr:last-child td {
     gap: 14px;
 }
 
+#diagnosticsErrors td:last-child {
+    white-space: normal;
+    min-width: 280px;
+    max-width: 680px;
+}
+
+#diagnosticsSnapshot,
+#diagnosticsTestResult {
+    max-height: 420px;
+    overflow: auto;
+}
+
 /* ----------------------------------------------------------------
    Toast Notifications
    ---------------------------------------------------------------- */

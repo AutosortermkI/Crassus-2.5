@@ -193,7 +193,7 @@ def check_daily_loss_limit(trading_client, correlation_id: str = "") -> bool:
 def check_trading_safety(trading_client, correlation_id: str = "") -> bool:
     """Run all pre-trade safety gates that can block new order entry."""
     check_operator_halt(correlation_id)
-    check_live_trading_gate(correlation_id)
+    check_live_trading_gate(correlation_id, broker="alpaca")
     check_daily_loss_limit(trading_client, correlation_id)
     return True
 

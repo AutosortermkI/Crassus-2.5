@@ -10,6 +10,7 @@ Usage:
 """
 
 import os
+import re
 import webbrowser
 import threading
 import json
@@ -77,6 +78,11 @@ def _dashboard_receive_url() -> str:
 def _url_with_token(url: str, token: str) -> str:
     separator = "&" if "?" in url else "?"
     return f"{url}{separator}token={token}" if url else ""
+
+
+def _redact_url_tokens(message: str) -> str:
+    """Remove webhook token query values from operator-facing error text."""
+    return re.sub(r"([?&]token=)[^\s'\"&)>]+", r"\1[redacted]", message or "")
 
 
 def _dashboard_access_passwords() -> tuple[str, str]:
@@ -1307,17 +1313,23 @@ def api_webhook_test():
             timeout=10,
         )
         body = response.json() if response.headers.get("content-type", "").startswith("application/json") else response.text
-        return jsonify({
+        payload = {
             "status": "ok" if response.status_code < 400 else "error",
             "response_code": response.status_code,
             "response_body": body,
             "trade_url": trade_url,
             "parsed": parsed_dict,
-        }), (200 if response.status_code < 400 else response.status_code)
+        }
+        if response.status_code >= 400:
+            if isinstance(body, dict):
+                payload["message"] = body.get("message") or body.get("error") or "Test webhook failed"
+            else:
+                payload["message"] = body or "Test webhook failed"
+        return jsonify(payload), (200 if response.status_code < 400 else response.status_code)
     except ParseError as e:
         return jsonify({"status": "error", "message": str(e)}), 400
     except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+        return jsonify({"status": "error", "message": _redact_url_tokens(str(e))}), 500
 
 
 # ======================================================================

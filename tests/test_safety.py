@@ -154,3 +154,13 @@ class TestTradingSafety:
         client = MagicMock()
 
         assert check_trading_safety(client, "test-123") is True
+
+    def test_alpaca_safety_ignores_legacy_tastytrade_order_broker(self, monkeypatch):
+        monkeypatch.setenv("ALPACA_PAPER", "true")
+        monkeypatch.setenv("ORDER_BROKER", "tastytrade")
+        monkeypatch.setenv("TASTYTRADE_IS_TEST", "false")
+        monkeypatch.setenv("TASTYTRADE_DRY_RUN", "false")
+        monkeypatch.delenv("LIVE_TRADING_CONFIRMED", raising=False)
+        client = MagicMock()
+
+        assert check_trading_safety(client, "test-123") is True

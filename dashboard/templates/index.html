@@ -25,6 +25,7 @@
 
 <nav class="tab-nav">
     <button class="tab-btn active" data-tab="webhooks">Webhooks</button>
+    <button class="tab-btn" data-tab="logs">Logs</button>
     <button class="tab-btn" data-tab="portfolio">Portfolio</button>
     <button class="tab-btn" data-tab="settings">Settings</button>
 </nav>
@@ -312,7 +313,55 @@
     </div>
 
     <!-- ============================================================
-         TAB 2: Portfolio
+         TAB 2: Logs
+         ============================================================ -->
+    <div id="panel-logs" class="tab-panel">
+
+        <div class="card">
+            <div class="card-header">
+                <h2>
+                    Route Tests
+                    <span id="diagnosticsStatusPill" class="status-pill status-warning">Loading...</span>
+                </h2>
+                <div class="actions">
+                    <button class="btn btn-secondary" id="diagnosticsRefreshBtn" onclick="loadDiagnostics()">Refresh</button>
+                    <button class="btn btn-primary" id="diagnosticsStockTestBtn" onclick="runDiagnosticsTest('stockBuy')">Test Stock</button>
+                    <button class="btn btn-primary" id="diagnosticsOptionsTestBtn" onclick="runDiagnosticsTest('optionsBuy')">Test Options</button>
+                </div>
+            </div>
+            <p class="card-description">
+                Dashboard-fired test payloads use the same split stock/share and options Function App URLs shown on the Webhooks tab.
+            </p>
+            <div id="diagnosticsStatusGrid" class="grid-auto">
+                <div class="empty-state">Loading diagnostics.</div>
+            </div>
+            <div class="section-label" style="margin-top: 16px;">Last Test Result</div>
+            <pre id="diagnosticsTestResult" class="json-box">No test sent from this browser session.</pre>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h2>
+                    Recent Errors
+                    <span id="diagnosticsErrorCount" class="count-pill">0</span>
+                </h2>
+            </div>
+            <div id="diagnosticsErrors">
+                <div class="empty-state">No recent errors loaded.</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h2>Raw Diagnostics Snapshot</h2>
+            </div>
+            <pre id="diagnosticsSnapshot" class="json-box">Loading diagnostics.</pre>
+        </div>
+
+    </div>
+
+    <!-- ============================================================
+         TAB 3: Portfolio
          ============================================================ -->
     <div id="panel-portfolio" class="tab-panel">
 
@@ -359,7 +408,7 @@
     </div>
 
     <!-- ============================================================
-         TAB 3: Settings
+         TAB 4: Settings
          ============================================================ -->
     <div id="panel-settings" class="tab-panel">
 

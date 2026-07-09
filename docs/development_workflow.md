@@ -106,6 +106,7 @@ Dashboard credential and webhook-token saves follow the same environment target 
 ## Safety Rules
 
 - Broker selection never enables live trading by itself.
+- The stock/share Alpaca safety path must not inherit legacy `ORDER_BROKER=tastytrade`; split routes should use `STOCK_BROKER` and `OPTIONS_BROKER` for broker-specific live gates.
 - Alpaca live trading requires `ALPACA_PAPER=false` and `LIVE_TRADING_CONFIRMED=yes`.
 - TastyTrade production trading requires `TASTYTRADE_IS_TEST=false`, `TASTYTRADE_DRY_RUN=false`, and `LIVE_TRADING_CONFIRMED=yes`.
 - TastyTrade options require explicit contract fields and still obey `TASTYTRADE_DRY_RUN`, `TASTYTRADE_IS_TEST`, and `LIVE_TRADING_CONFIRMED`.

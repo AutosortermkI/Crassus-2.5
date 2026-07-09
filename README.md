@@ -57,6 +57,7 @@ The web dashboard (`http://localhost:5050`) provides:
 - **Optional shared access password** — protect the dashboard itself when you are hosting it for partners.
 - **TradingView inbox** — copy the shared webhook URL, copy the tokenized URL, generate a new webhook token, and send a test alert.
 - **Latest webhook snapshot** — inspect the raw payload, parsed fields, and forward/execution result for the most recent TradingView alert.
+- **Test alert diagnostics** — send JSON test alerts to the active split Function App route and see the Function response when a safety gate or broker validation rejects the test.
 - **Active Webhooks sidebar** — see grouped, recently active alert signatures so partners can confirm what is currently firing.
 - **Recent Alerts table** — audit the latest webhook traffic without digging through Azure logs.
 - **Broker Control Center** — see stock/options routing, Tastytrade sandbox/prod state, dry-run/live gates, Alpaca fallback state, deployed branch, and deployed commit.
@@ -645,6 +646,7 @@ All variables are configurable via the dashboard UI or directly in `.env`.
 
 The Azure deployment itself does not require Tastytrade credentials in local `.env`. If they are missing, deployment continues with split broker settings, `TASTYTRADE_IS_TEST=false`, and `TASTYTRADE_DRY_RUN=true`; the hosted dashboard will show broker credentials as missing until you enter them there.
 When credentials or webhook tokens are entered in the hosted dashboard, the dashboard syncs those settings to the current environment's stock Function App, options Function App, and dashboard Web App. Dev sync targets `crassus-dev-stock`, `crassus-dev-options`, and `crassus-dev-dashboard` by default; production syncs to `crassus-25-stock`, `crassus-25-options`, and `crassus-25-dashboard`. During migration, `AZURE_LEGACY_PROD_FUNCTION_APP_NAME=crassus-25` lets deployment read existing nonprinted secrets from the old combined Function App before that app is deleted.
+Normal Tastytrade OAuth app credentials use the production API, so the dashboard's Cert/Sandbox API toggle must be OFF for those credentials. Turn the toggle ON only for cert/sandbox grants.
 
 ### Optional (with defaults)
 
